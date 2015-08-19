@@ -1,0 +1,49 @@
+sub GetRelativeDir FullPath
+	var Temp
+	var SLen
+	replace Temp FullPath InitPath ""
+	ifnot Temp like "\?*" skip
+	len SLen Temp
+	subtract SLen SLen "1"
+	substring Temp Temp "1" SLen
+	:skip
+	return Temp
+end sub
+
+sub ThousandSeperator Number
+	var Temp
+	format Temp Number "#,0.#"
+	return Temp
+end sub
+
+sub Date_YMD
+	return year + "." + month + "." + day
+end sub
+
+sub Date
+	return day + "." + month + "." + year
+end sub
+
+sub Time_12h
+	var suffix "AM"
+	var h hour
+	if h > "0" skip
+	set h "12"
+	goto isAM
+:skip
+	if h < "12" isAM
+	subtract h h "12"
+	if h = "12" isAM
+	set suffix "PM"
+:isAM
+	return h + ":" + minute + " " + suffix
+end sub
+
+sub Time
+	return hour + ":" + minute
+end sub
+
+sub skipEmpty
+	if accessdenied = "true" nextdir
+	if filecount = "0" nextdir
+end sub
