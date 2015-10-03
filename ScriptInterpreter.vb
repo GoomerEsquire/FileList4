@@ -1,4 +1,5 @@
 ﻿Imports System.IO
+Imports System.Text
 
 Class ScriptLine
 
@@ -134,7 +135,7 @@ Class Variable
 	End Property
 
 	Public Overrides Function ToString() As String
-		Return n + ": " + Chr(ScriptInterpreter.ASCII.Quote) + v + Chr(ScriptInterpreter.ASCII.Quote)
+		Return v
 	End Function
 
 End Class
@@ -261,7 +262,7 @@ Class SubInfo
 
 	End Function
 
-	Sub EraseVariables()
+	Sub ClearVariables()
 		vars = {}
 	End Sub
 
@@ -671,13 +672,13 @@ Class ScriptInterpreter
 	Private Function ParseArgs(source As String) As Argument()
 
 		If source.Length = 0 Then Return {}
+
 		Dim stringOpen As Boolean = False
-		Dim temp As String = String.Empty
-		Dim move As Integer = 0
 		Dim resolve As Boolean = False
+		Dim temp, tempArg As New StringBuilder
+		Dim move As Integer = 0
 		Dim curChar, nextChar As Char
 		Dim newArg() As Argument = {}
-		Dim tempArg As String = String.Empty
 		Dim argType As Argument.ArgType = Argument.ArgType.Var
 
 		For i As Integer = 1 To source.Length
@@ -695,20 +696,19 @@ Class ScriptInterpreter
 				stringOpen = Not stringOpen
 				argType = Argument.ArgType.Str
 			ElseIf stringOpen Then
-				If curChar = Chr(ASCII.Quote) Then Continue For
-				tempArg += curChar
+				tempArg.Append(curChar)
 			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
 				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
-					tempArg += temp
-					temp = String.Empty
+					tempArg.Append(temp)
+					temp = New StringBuilder
 				End If
-				newArg += New Argument(tempArg, argType)
+				newArg += New Argument(tempArg.ToString, argType)
 				argType = Argument.ArgType.Var
-				tempArg = String.Empty
+				tempArg = New StringBuilder
 				resolve = False
 			ElseIf nextChar = Nothing OrElse (curChar = Chr(ASCII.Space) AndAlso nextChar = Chr(ASCII.Plus)) Then
 				If nextChar = Nothing Then
-					temp += curChar
+					temp.Append(curChar)
 				Else
 					move = +2
 					resolve = True
@@ -716,30 +716,30 @@ Class ScriptInterpreter
 				End If
 				If temp.Length > 0 Then
 					If resolve Then
-						If isFixedVar(temp) Then
-							temp = GetFixedVar(temp)
+						If isFixedVar(temp.ToString) Then
+							temp.Replace(temp.ToString, GetFixedVar(temp.ToString))
 						Else
-							Dim tempvar As Variable = GetVarObj(temp)
+							Dim tempvar As Variable = GetVarObj(temp.ToString)
 							If Not tempvar Is Nothing Then
-								temp = tempvar.Value
+								temp.Replace(temp.ToString, tempvar.Value)
 							Else
-								DisplayError("Variable not declared: " + Chr(34) + temp + Chr(34) + "!")
+								DisplayError("Variable not declared: " + Chr(34) + temp.ToString + Chr(34) + "!")
 								Return Nothing
 							End If
 						End If
 					End If
-					tempArg += temp
-					temp = String.Empty
+					tempArg.Append(temp)
+					temp = New StringBuilder
 				End If
 			Else
-				temp += curChar
+				temp.Append(curChar)
 			End If
 			i += move
 			move = 0
 		Next
 
 		If argType = Argument.ArgType.Str OrElse tempArg.Length > 0 Then
-			newArg += New Argument(tempArg, argType)
+			newArg += New Argument(tempArg.ToString, argType)
 		End If
 
 		Return newArg
@@ -884,7 +884,7 @@ Class ScriptInterpreter
 				If ReturnToParent Then Exit For
 			Next
 
-			ActiveSub.EraseVariables()
+			ActiveSub.ClearVariables()
 		End If
 
 		Array.Resize(callStack, callStack.Count - 1)
