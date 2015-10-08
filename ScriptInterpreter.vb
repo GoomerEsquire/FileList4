@@ -414,7 +414,6 @@ Class ScriptInterpreter
 	Protected OnError As ErrorMode = ErrorMode.Bail
 	Protected ActiveSub As SubInfo
 	Protected changeLine As Integer
-	Protected maxCommands As Integer = 50
 	Protected curFile As FileInfo
 	Protected curDir As DirectoryInfo
 	Protected sWatch As New Stopwatch

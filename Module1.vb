@@ -17,6 +17,7 @@ Module Module1
 	Public AccessDenied As Boolean = False
 	Public ErrorsHappened As Boolean = False
 	Public CommandsProcessed As Integer = 0
+	Public MaxCommands As Integer = 50
 
 	Function GetScript(path As String) As ScriptInterpreter
 
@@ -71,8 +72,8 @@ Module Module1
 
 		If path.Length = 0 Then Return
 
-		Dim fileArray As String() = {}
-		Dim dirArray As String() = {}
+		Dim fileArray As FileInfo() = {}
+		Dim dirArray As DirectoryInfo() = {}
 
 		InLoop = True
 
@@ -82,39 +83,40 @@ Module Module1
 		End If
 
 		AccessDenied = False
+		Dim dInfo As DirectoryInfo = Nothing
 
 		Try
-			fileArray = Directory.GetFiles(path)
+			dInfo = New DirectoryInfo(path)
+			fileArray = dInfo.GetFiles
 		Catch
 			AccessDenied = True
-			fileArray = {""}
+			fileArray = {}
 		End Try
 
-		If fileArray.Count = 0 Then fileArray = {""}
-
-		For Each f As String In fileArray
-			NextFile = False
+		If fileArray.Count = 0 Then
 			CommandsProcessed = 0
-			If f.Length = 0 Then
-				MainScript.Run(func, New DirectoryInfo(path), Nothing)
-			Else
-				MainScript.Run(func, New DirectoryInfo(path), New FileInfo(f))
-			End If
-			If NextDir Then Exit For
-		Next
+			MainScript.Run(func, dInfo, Nothing)
+		Else
+			For Each fInfo As FileInfo In fileArray
+				NextFile = False
+				CommandsProcessed = 0
+				MainScript.Run(func, dInfo, fInfo)
+				If NextDir Then Exit For
+			Next
+		End If
 
 		AccessDenied = False
 
 		Try
-			dirArray = Directory.GetDirectories(path)
+			dirArray = dInfo.GetDirectories
 		Catch
 			AccessDenied = True
-			dirArray = {""}
+			dirArray = {}
 		End Try
 
-		For Each d As String In dirArray
+		For Each d As DirectoryInfo In dirArray
 			NextDir = False
-			FileLoop(d, func, False)
+			FileLoop(d.FullName, func, False)
 		Next
 
 		If newLoop Then
