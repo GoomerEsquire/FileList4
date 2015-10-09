@@ -75,6 +75,7 @@ Class Argument
 		If Not t = ArgType.Var Then
 			Return val
 		ElseIf ActiveScript.isFixedVar(val) Then
+			t = ArgType.Str
 			val = ActiveScript.GetFixedVar(val)
 		Else
 			Dim varobj As Variable = ActiveScript.GetVarObj(val)
@@ -385,6 +386,7 @@ Class ScriptInterpreter
 		Dim newsub As New SubInfo(Me, "Init")
 		callStack += newsub
 		ActiveSub = newsub
+		ActiveScript = Me
 		If LCase(path) = "fl4" Then
 			ScriptLines = Compact(Split(My.Resources.fl4, vbCrLf))
 			scriptPath = path
@@ -560,7 +562,7 @@ Class ScriptInterpreter
 						If openSub Is Nothing Then
 							Dim args As Argument() = ParseArgs(argstring)
 							If args.Count = 2 Then
-								NewVar(args(0).Value).Value = args(1).Value
+								NewVar(args(0).Value).Value = args(1).Resolve
 							ElseIf args.Count = 1 Then
 								NewVar(args(0).Value).Value = String.Empty
 							End If
@@ -611,7 +613,9 @@ Class ScriptInterpreter
 
 		name = LCase(name)
 		For Each s As SubInfo In subArray
-			If LCase(s.Name) = name Then Return s
+			If LCase(s.Name) = name Then
+				Return s
+			End If
 		Next
 		Return Nothing
 
@@ -621,8 +625,12 @@ Class ScriptInterpreter
 
 		name = LCase(name)
 		For Each s As SubInfo In subArray
-			If Not s.Script Is script Then Continue For
-			If LCase(s.Name) = name Then Return s
+			If Not s.Script Is script Then
+				Continue For
+			End If
+			If LCase(s.Name) = name Then
+				Return s
+			End If
 		Next
 		Return Nothing
 
@@ -781,7 +789,7 @@ Class ScriptInterpreter
 				changeLine = 0
 				Dim line As String = ScriptLines(i).ToString
 				If line(0) = Chr(ASCII.Colon) Then Continue For
-				If CommandsProcessed >= maxCommands Then
+				If CommandsProcessed >= MaxCommands Then
 					DisplayError("Maximum number of commands reached!")
 					Exit For
 				End If
@@ -896,7 +904,7 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public fixedVars() As String = {"q", "newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight"}
+	Public fixedVars() As String = {"q", "newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight", "fileextension"}
 
 	Function GetFixedVar(varName As String) As String
 
@@ -943,6 +951,15 @@ Class ScriptInterpreter
 				Else
 					Return Path.GetFileNameWithoutExtension(curFile.FullName)
 				End If
+			Case "fileextension"
+				If curDir Is Nothing Then
+					DisplayError("No directory-object!")
+				ElseIf curFile Is Nothing Then
+					DisplayError("No file-object in " + Chr(34) + curDir.FullName + Chr(34) + "!")
+				Else
+					Return Path.GetExtension(curFile.FullName)
+				End If
+
 			Case "size"
 				If curDir Is Nothing Then
 					DisplayError("No directory-object!")
@@ -984,7 +1001,7 @@ Class ScriptInterpreter
 			Case "utcoffset"
 				Return Format(Date.Now, "zz")
 			Case "maxcommands"
-				Return maxCommands.ToString
+				Return MaxCommands.ToString
 			Case "swtime"
 				Return sWatch.Elapsed.TotalMilliseconds.ToString
 			Case "proccommands"
@@ -1338,7 +1355,7 @@ Class ScriptInterpreter
 
 		Dim num1 As Integer = TryCastInt(args(0).Resolve)
 		If num1 = Nothing Then Return
-		maxCommands = num1
+		MaxCommands = num1
 
 	End Sub
 
@@ -1506,7 +1523,7 @@ Class ScriptInterpreter
 		section = args(1).Value
 		Dim calledSub As SubInfo = GetSub(section)
 		If calledSub Is Nothing Then
-			DisplayError("Cannot find sub " + section + "!")
+			DisplayError("Cannot find sub " + Chr(34) + section + Chr(34) + "!")
 			Return
 		End If
 

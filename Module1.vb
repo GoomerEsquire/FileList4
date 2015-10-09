@@ -84,9 +84,9 @@ Module Module1
 
 		AccessDenied = False
 		Dim dInfo As DirectoryInfo = Nothing
+		dInfo = New DirectoryInfo(path)
 
 		Try
-			dInfo = New DirectoryInfo(path)
 			fileArray = dInfo.GetFiles
 		Catch
 			AccessDenied = True
