@@ -674,6 +674,7 @@ Class ScriptInterpreter
 		SmallerThan = 60
 		Equals = 61
 		GreaterThan = 62
+		Backslash = 92
 	End Enum
 
 	Private Function ParseArgs(source As String) As Argument()
@@ -687,6 +688,7 @@ Class ScriptInterpreter
 		Dim curChar, nextChar As Char
 		Dim newArg() As Argument = {}
 		Dim argType As Argument.ArgType = Argument.ArgType.Var
+		Dim escape As Boolean = False
 
 		For i As Integer = 1 To source.Length
 			If i > source.Length Then
@@ -699,19 +701,29 @@ Class ScriptInterpreter
 			Else
 				nextChar = Nothing
 			End If
-			If curChar = Chr(ASCII.Quote) Then
-				stringOpen = Not stringOpen
+			If curChar = Chr(ASCII.Backslash) Then
+				If stringOpen Then tempArg.Append(curChar)
+				escape = Not escape
+				argType = Argument.ArgType.Str
+			ElseIf curChar = Chr(ASCII.Quote) Then
+				If Not escape Then
+					stringOpen = Not stringOpen
+				Else
+					tempArg.Append(curChar)
+					escape = False
+				End If
 				argType = Argument.ArgType.Str
 			ElseIf stringOpen Then
 				tempArg.Append(curChar)
+				escape = False
 			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
 				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
 					tempArg.Append(temp)
-					temp = New StringBuilder
+					temp.Clear()
 				End If
 				newArg += New Argument(tempArg.ToString, argType)
 				argType = Argument.ArgType.Var
-				tempArg = New StringBuilder
+				tempArg.Clear()
 				resolve = False
 			ElseIf nextChar = Nothing OrElse (curChar = Chr(ASCII.Space) AndAlso nextChar = Chr(ASCII.Plus)) Then
 				If nextChar = Nothing Then
@@ -736,7 +748,7 @@ Class ScriptInterpreter
 						End If
 					End If
 					tempArg.Append(temp)
-					temp = New StringBuilder
+					temp.Clear()
 				End If
 			Else
 				temp.Append(curChar)
@@ -904,13 +916,11 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public fixedVars() As String = {"q", "newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight", "fileextension"}
+	Public fixedVars() As String = {"newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight", "fileextension"}
 
 	Function GetFixedVar(varName As String) As String
 
 		Select Case LCase(varName)
-			Case "q"
-				Return Chr(34)
 			Case "newline"
 				Return vbCrLf
 			Case "dircount"
