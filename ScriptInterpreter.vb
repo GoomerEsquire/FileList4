@@ -1585,13 +1585,15 @@ Class ScriptInterpreter
 			Return
 		End If
 
-		RData = script.Run(section, curDir, curFile, passargs)
-		If RData.Value = Nothing Then
+		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
+		If result.Value = Nothing Then
 			DisplayError("Function returned NULL!")
 			Return
 		End If
 
-		var.Value = RData.Value
+		RData.NextDirectory = result.NextDirectory
+		RData.NextFile = result.NextFile
+		var.Value = result.Value
 		ReturnToParent = False
 
 	End Sub
@@ -1600,7 +1602,6 @@ Class ScriptInterpreter
 
 		Dim section As String
 		Dim path As String = scriptPath
-		Dim result As String = Nothing
 		Dim minargs As Integer = 2
 
 		If args.Count < minargs Then
@@ -1656,8 +1657,9 @@ Class ScriptInterpreter
 			Array.ConstrainedCopy(args, 3, passargs, 0, passargs.Count)
 		End If
 
-		RData = script.Run(section, curDir, curFile, passargs)
-
+		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
+		RData.NextDirectory = result.NextDirectory
+		RData.NextFile = result.NextFile
 		ReturnToParent = False
 
 	End Sub
