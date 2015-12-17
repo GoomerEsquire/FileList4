@@ -1,4 +1,5 @@
 ﻿Imports System.IO
+Imports System.Runtime.CompilerServices
 
 Module Module1
 
@@ -7,8 +8,6 @@ Module Module1
 	Public subArray As SubInfo() = {}
 
 	Public InitPath As String() = {}
-	Public NextDir As Boolean = False
-	Public NextFile As Boolean = False
 	Public MainScript As ScriptInterpreter
 	Public ActiveScript As ScriptInterpreter
 	Public vars() As Variable = {}
@@ -98,10 +97,9 @@ Module Module1
 			MainScript.Run(func, dInfo, Nothing)
 		Else
 			For Each fInfo As FileInfo In fileArray
-				NextFile = False
 				CommandsProcessed = 0
-				MainScript.Run(func, dInfo, fInfo)
-				If NextDir Then Exit For
+				Dim data As ReturnData = MainScript.Run(func, dInfo, fInfo)
+				If data.NextDirectory Then Exit For
 			Next
 		End If
 
@@ -115,7 +113,6 @@ Module Module1
 		End Try
 
 		For Each d As DirectoryInfo In dirArray
-			NextDir = False
 			FileLoop(d.FullName, func, False)
 		Next
 
@@ -123,10 +120,64 @@ Module Module1
 			Array.Resize(InitPath, InitPath.Count - 1)
 		End If
 
-		NextDir = False
-		NextFile = False
 		InLoop = False
 
 	End Sub
+
+End Module
+
+Public Class ReturnData
+
+	Protected nfile, ndir As Boolean
+	Protected val As String
+
+	Property Value As String
+		Get
+			Return val
+		End Get
+		Set(value As String)
+			val = value
+		End Set
+	End Property
+
+	Property NextFile As Boolean
+		Get
+			Return nfile
+		End Get
+		Set(value As Boolean)
+			nfile = value
+		End Set
+	End Property
+
+	Property NextDirectory As Boolean
+		Get
+			Return ndir
+		End Get
+		Set(value As Boolean)
+			ndir = value
+		End Set
+	End Property
+
+End Class
+
+<HideModuleName> Module Extensions
+
+	<Extension> Public Function MoveItem(Of T)(ByRef a As T(), source As Integer, destination As Integer) As Boolean
+
+		Dim sourceItem As T = a(source)
+
+		If source < destination Then
+			Array.ConstrainedCopy(a, source + 1, a, source, destination - source)
+			a(destination) = sourceItem
+		ElseIf source > destination Then
+			Array.ConstrainedCopy(a, destination, a, destination + 1, source - destination)
+			a(destination) = sourceItem
+		Else
+			Return False
+		End If
+
+		Return True
+
+	End Function
 
 End Module

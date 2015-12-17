@@ -12,11 +12,13 @@ Class ScriptLine
 	End Operator
 
 	Protected s As String
-	Protected o, l As Integer
+	Protected o, l, m As Integer
+	Protected ifblk As IfBlock
 	Sub New(str As String, originalLine As Integer, line As Integer)
 		s = str
 		l = line
 		o = originalLine
+		m = -1
 	End Sub
 
 	Public Overrides Function ToString() As String
@@ -33,6 +35,24 @@ Class ScriptLine
 		Get
 			Return o
 		End Get
+	End Property
+
+	Property IfBlock As IfBlock
+		Get
+			Return ifblk
+		End Get
+		Set(value As IfBlock)
+			ifblk = value
+		End Set
+	End Property
+
+	Property MoveTo As Integer
+		Get
+			Return m
+		End Get
+		Set(value As Integer)
+			m = value
+		End Set
 	End Property
 
 End Class
@@ -194,7 +214,9 @@ Class SubInfo
 	Protected pos As Integer = 0
 	Protected loc(1) As Integer
 	Protected gotoArray As GotoInfo() = {}
-	Protected ifBlocks As IfBlock() = {}
+	Protected ifBlockArray As IfBlock() = {}
+	Protected curifblock As IfBlock
+
 	Sub New(script As ScriptInterpreter, section As String)
 		scriptobj = script
 		n = section
@@ -276,23 +298,18 @@ Class SubInfo
 		End Set
 	End Property
 
-	Function GetIfBlockObj(Optional lineNumber As Integer = -1) As IfBlock
-
-		If lineNumber = -1 Then lineNumber = pos
-
-		For Each ifBlockObj As IfBlock In ifBlocks
-			If ifBlockObj.StartPoints(0) = lineNumber Then Return ifBlockObj
-		Next
-		Return Nothing
-
-	End Function
-
 	Sub AddIfBlock(ifBlockObj As IfBlock)
 
-		Array.Resize(ifBlocks, ifBlocks.Count + 1)
-		ifBlocks(ifBlocks.Count - 1) = ifBlockObj
+		Array.Resize(ifBlockArray, ifBlockArray.Count + 1)
+		ifBlockArray(ifBlockArray.Count - 1) = ifBlockObj
 
 	End Sub
+
+	Public ReadOnly Property IfBlocks() As IfBlock()
+		Get
+			Return ifBlockArray
+		End Get
+	End Property
 
 	Public Overrides Function ToString() As String
 		Return n
@@ -310,33 +327,40 @@ Class IfBlock
 
 	End Operator
 
-	Protected startpos(), endpos As Integer
+	Protected startpos As Integer
+	Protected endpos() As Integer = {}
 
 	Sub New(startPoint As Integer)
-		startpos = {startPoint}
+		startpos = startPoint
 	End Sub
 
-	Property EndPoint As Integer
-		Get
-			Return endpos
-		End Get
-		Set(value As Integer)
-			endpos = value
-		End Set
-	End Property
-
-	ReadOnly Property StartPoints As Integer()
+	ReadOnly Property StartPoint As Integer
 		Get
 			Return startpos
 		End Get
 	End Property
 
-	Sub AddElse(pos As Integer)
+	ReadOnly Property EndPoints As Integer()
+		Get
+			Return endpos
+		End Get
+	End Property
 
-		Array.Resize(startpos, startpos.Count + 1)
-		startpos(startpos.Count - 1) = pos
+	Sub AddEndPoint(pos As Integer)
+
+		Array.Resize(endpos, endpos.Count + 1)
+		endpos(endpos.Count - 1) = pos
 
 	End Sub
+
+	Function GetNextEndPoint(curpos As Integer) As Integer
+
+		For i As Integer = 0 To endpos.Count - 1
+			If curpos < endpos(i) Then Return endpos(i)
+		Next
+		Return -1
+
+	End Function
 
 End Class
 
@@ -354,23 +378,6 @@ Class ScriptInterpreter
 		Return scriptPath
 	End Function
 
-	Public Function Compact(lines As String()) As ScriptLine()
-
-		ScriptLines = {}
-		Dim int As Integer = 1
-
-		For i As Integer = 1 To lines.Count
-			Dim l As String = lines(i - 1).Trim
-			If l.Length = 0 Then Continue For
-			If l(0) = Chr(ASCII.Apostrophe) Then Continue For
-			ScriptLines += New ScriptLine(l, i, int)
-			int += 1
-		Next
-
-		Return ScriptLines
-
-	End Function
-
 	Public Function TranslatePos(line As Integer) As Integer
 
 		For Each lineObj As ScriptLine In ScriptLines
@@ -382,13 +389,14 @@ Class ScriptInterpreter
 
 	Protected scriptPath As String
 	Protected ScriptLines As ScriptLine() = {}
+	Protected ScriptFile As String() = {}
 	Sub New(path As String, allowFL4 As Boolean)
 		Dim newsub As New SubInfo(Me, "Init")
 		callStack += newsub
 		ActiveSub = newsub
 		ActiveScript = Me
 		If LCase(path) = "fl4" Then
-			ScriptLines = Compact(Split(My.Resources.fl4, vbCrLf))
+			ScriptFile = Split(My.Resources.fl4, vbCrLf)
 			scriptPath = path
 		Else
 			Dim finfo As New FileInfo(path)
@@ -401,9 +409,9 @@ Class ScriptInterpreter
 				DisplayError("Could not find file: " + Chr(34) + scriptPath + Chr(34) + "!")
 				Return
 			End If
-			ScriptLines = Compact(File.ReadAllLines(scriptPath, System.Text.Encoding.Default))
+			ScriptFile = File.ReadAllLines(scriptPath, System.Text.Encoding.Default)
 		End If
-		CompileInfo()
+		ScriptLines = CompileInfo()
 		Array.Resize(callStack, callStack.Count - 1)
 	End Sub
 
@@ -421,6 +429,7 @@ Class ScriptInterpreter
 	Protected sWatch As New Stopwatch
 	Protected enc As System.Text.Encoding = System.Text.Encoding.Default
 	Protected ReturnToParent As Boolean = False
+	Protected RData As ReturnData
 
 	Enum ErrorMode
 		Bail
@@ -485,34 +494,48 @@ Class ScriptInterpreter
 
 	End Function
 
-	Sub CompileInfo()
+	Function CompileInfo() As ScriptLine()
 
 		Dim openSub As SubInfo = Nothing
 		Dim loc0 As Integer
-		Dim ifLevel As Integer = 0
-		Dim openIfBlock As IfBlock = Nothing
+		Dim ifLevel As Integer = -1
+		Dim openIfBlocks As IfBlock() = {}
+		Dim gotoCount As Integer = 0
+		Dim newScript As ScriptLine() = {}
+		Dim curLine As Integer = -1
 
 		'gather info for quick jumping and vars
-		For i As Integer = 0 To ScriptLines.Count - 1
-			Dim line As String = ScriptLines(i).ToString
+		For i As Integer = 0 To ScriptFile.Count - 1
+
+			Dim line As String = ScriptFile(i)
+			line = line.Trim
+			If line.Length = 0 Then Continue For
+			If GetChar(line, 1) = Chr(ASCII.Apostrophe) Then Continue For
+			curLine += 1
 			ActiveSub.CurPos = i + 1
+			newScript += New ScriptLine(line, i, curLine)
+
 			If Not openSub Is Nothing AndAlso line(0) = Chr(ASCII.Colon) Then
-				openSub.AddGotoObj(line.Substring(1, line.Length - 1), i + 1)
+				Dim gotoname As String = line.Substring(1, line.Length - 1)
+				If IsNumeric(gotoname) Then
+					DisplayError("GoTo-Targets cannot be numeric!")
+					Return {}
+				Else
+					openSub.AddGotoObj(gotoname, curLine)
+				End If
 			Else
 				Dim argArray() As String = Split(line)
 				Dim command As String = argArray(0)
 				Dim argstring As String = String.Empty
 				If argArray.Count > 1 Then
 					argstring = String.Join(Chr(ASCII.Space), argArray, 1, argArray.Count - 1)
-				Else
-					Continue For
 				End If
 
 				Select Case LCase(command)
 					Case "sub"
 						If Not openSub Is Nothing Then
 							DisplayError("Sub not closed: " + Chr(34) + openSub.Name + Chr(34) + "!")
-							Return
+							Return {}
 						End If
 						Dim args As Argument() = ParseArgs(argstring)
 						If args.Count > 0 Then
@@ -521,9 +544,9 @@ Class ScriptInterpreter
 								openSub = New SubInfo(Me, args(0).Value)
 							ElseIf Not s1.Location(0) = Nothing Then
 								DisplayError("Sub already exists: " + Chr(34) + args(0).Value + Chr(34) + "!")
-								Return
+								Return {}
 							End If
-							loc0 = i
+							loc0 = curLine
 							If args.Count > 1 Then
 								Array.ConstrainedCopy(args, 1, args, 0, args.Count - 1)
 								Array.Resize(args, args.Count - 1)
@@ -531,7 +554,41 @@ Class ScriptInterpreter
 							End If
 						ElseIf args.Count < 1 Then
 							DisplayError("Missing arguments for Sub!")
-							Return
+							Return {}
+						End If
+
+					Case "if", "ifnot"
+						Dim args As Argument() = ParseArgs(argstring)
+						If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
+							ifLevel += 1
+							Array.Resize(openIfBlocks, ifLevel + 1)
+							openIfBlocks(ifLevel) = New IfBlock(curLine)
+							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+						End If
+
+					Case "else"
+						If ifLevel = -1 Then DisplayError("Else must follow If/IfNot!")
+						newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+						openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+
+					Case "elseif", "elseifnot"
+						Dim args As Argument() = ParseArgs(argstring)
+						If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
+							If ifLevel = -1 Then DisplayError("ElseIf/ElseIfNot must follow If/IfNot!")
+							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+							openIfBlocks(ifLevel).AddEndPoint(curLine)
+						End If
+
+					Case "endif"
+						If ifLevel = -1 Then DisplayError("EndIf must follow If/IfNot!")
+						newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+						openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+						ifLevel -= 1
+						If ifLevel = -1 Then
+							For Each ifObj As IfBlock In openIfBlocks
+								openSub.AddIfBlock(ifObj)
+							Next
+							openIfBlocks = {}
 						End If
 
 					Case "end"
@@ -540,22 +597,15 @@ Class ScriptInterpreter
 							If LCase(args(0).Value) = "sub" Then
 								If openSub Is Nothing Then
 									DisplayError("End Sub must follow Sub!")
-									Return
+									Return {}
 								End If
-								openSub.Location = {loc0, i}
+								openSub.Location = {loc0, curLine}
 								subArray += openSub
 								openSub = Nothing
-							ElseIf LCase(args(0).Value) = "if" Then
-								If openIfBlock Is Nothing Then
-									DisplayError("End If must follow If/IfNot!")
-									Return
-								End If
-
-								openIfBlock = Nothing
 							End If
 						ElseIf openSub Is Nothing Then
 							DisplayError("Invalid use of End!")
-							Return
+							Return {}
 						End If
 
 					Case "var"
@@ -584,10 +634,10 @@ Class ScriptInterpreter
 						Dim args As Argument() = ParseArgs(argstring)
 						If args.Count < 1 Then
 							DisplayError("Missing arguments for OnError!")
-							Return
+							Return {}
 						ElseIf args.Count > 1 Then
 							DisplayError("Too many arguments for OnError!")
-							Return
+							Return {}
 						End If
 						If LCase(args(0).Value) = "pause" Then
 							OnError = ErrorMode.Pause
@@ -597,17 +647,27 @@ Class ScriptInterpreter
 							OnError = ErrorMode.KeepGoing
 						Else
 							DisplayError("Invalid argument: " + Chr(34) + args(0).Value + Chr(34) + "!")
-							Return
+							Return {}
 						End If
 				End Select
 			End If
+		Next
+
+		For Each _sub As SubInfo In subArray
+			For Each block As IfBlock In _sub.IfBlocks
+				For Each endpoint As Integer In block.EndPoints
+					newScript(endpoint - 1).MoveTo = block.EndPoints(block.EndPoints.Count - 1)
+				Next
+			Next
 		Next
 
 		If Not openSub Is Nothing Then
 			DisplayError("Sub not closed: " + Chr(34) + openSub.Name + Chr(34) + "!")
 		End If
 
-	End Sub
+		Return newScript
+
+	End Function
 
 	Overloads Function GetSub(name As String) As SubInfo
 
@@ -701,11 +761,7 @@ Class ScriptInterpreter
 			Else
 				nextChar = Nothing
 			End If
-			If curChar = Chr(ASCII.Backslash) Then
-				If stringOpen Then tempArg.Append(curChar)
-				escape = Not escape
-				argType = Argument.ArgType.Str
-			ElseIf curChar = Chr(ASCII.Quote) Then
+			If curChar = Chr(ASCII.Quote) Then
 				If Not escape Then
 					stringOpen = Not stringOpen
 				Else
@@ -716,6 +772,9 @@ Class ScriptInterpreter
 			ElseIf stringOpen Then
 				tempArg.Append(curChar)
 				escape = False
+			ElseIf curChar = Chr(ASCII.Backslash) Then
+				escape = Not escape
+				argType = Argument.ArgType.Str
 			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
 				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
 					tempArg.Append(temp)
@@ -765,9 +824,11 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public keyWords() As String = {"set", "var", "swstop", "swstart", "if", "ifnot", "return", "nextdir", "next", "goto", "print", "write", "replace", "lcase", "ucase", "add", "subtract", "multiply", "divide", "round", "floor", "ceil", "char", "format", "padleft", "padright", "len", "substring", "call", "function", "beep", "title", "readkey", "maxcommands", "fileloop", "end", "encoding", "sleep", "=", "<", ">", "like", "continue", "onerror", "pause", "overwrite", "this", "fl4"}
+	Public keyWords() As String = {"set", "var", "swstop", "swstart", "if", "ifnot", "return", "nextdir", "next", "goto", "print", "write", "replace", "lcase", "ucase", "add", "subtract", "multiply", "divide", "round", "floor", "ceil", "char", "format", "padleft", "padright", "len", "substring", "call", "function", "beep", "title", "readkey", "maxcommands", "fileloop", "end", "encoding", "sleep", "=", "<", ">", "like", "continue", "onerror", "pause", "overwrite", "this", "fl4", "then"}
 
-	Function Run(subName As String, dInfo As DirectoryInfo, fInfo As FileInfo, Optional arguments As Argument() = Nothing) As String
+	Function Run(subName As String, dInfo As DirectoryInfo, fInfo As FileInfo, Optional arguments As Argument() = Nothing) As ReturnData
+
+		RData = New ReturnData
 
 		ActiveScript = Me
 		ActiveSub = GetSub(Me, subName)
@@ -779,7 +840,6 @@ Class ScriptInterpreter
 
 		callStack += ActiveSub
 
-		Dim returnVal As String = Nothing
 		curFile = fInfo
 		curDir = dInfo
 		ReturnToParent = False
@@ -799,15 +859,14 @@ Class ScriptInterpreter
 		If ActiveSub.Location(1) - ActiveSub.Location(0) > 1 Then
 			For i As Integer = ActiveSub.Location(0) + 1 To ActiveSub.Location(1) - 1
 				changeLine = 0
-				Dim line As String = ScriptLines(i).ToString
-				If line(0) = Chr(ASCII.Colon) Then Continue For
+				If ScriptLines(i).ToString(0) = Chr(ASCII.Colon) Then Continue For
 				If CommandsProcessed >= MaxCommands Then
 					DisplayError("Maximum number of commands reached!")
 					Exit For
 				End If
 				ActiveSub.CurPos = i + 1
 				CommandsProcessed += 1
-				Dim argArray() As String = Split(line)
+				Dim argArray() As String = Split(ScriptLines(i).ToString)
 				Dim command As String = argArray(0)
 				Dim args As String = String.Empty
 				If argArray.Count > 1 Then
@@ -823,19 +882,19 @@ Class ScriptInterpreter
 						sWatch.Stop()
 					Case "swstart"
 						sWatch.Restart()
-					Case "if"
+					Case "if", "elseif"
 						IfStatement(ParseArgs(args), False)
-					Case "ifnot"
+					Case "ifnot", "elseifnot"
 						IfStatement(ParseArgs(args), True)
 					Case "return"
-						returnVal = _Return(ParseArgs(args))
+						RData.Value = _Return(ParseArgs(args))
 						ReturnToParent = True
 					Case "nextdir"
 						If Not InLoop Then DisplayError("NextDir cannot be called outside of a file loop!")
-						NextDir = True
+						RData.NextDirectory = True
 					Case "next"
 						If Not InLoop Then DisplayError("Next cannot be called outside of a file loop!")
-						NextFile = True
+						RData.NextFile = True
 					Case "goto"
 						Jump(ParseArgs(args))
 					Case "print"
@@ -898,8 +957,12 @@ Class ScriptInterpreter
 						DisplayError("Invalid command: " + Chr(34) + command + Chr(34) + "!")
 				End Select
 
-				i += changeLine
-				If NextDir OrElse NextFile Then Exit For
+				If Not changeLine = 0 Then
+					i += changeLine
+				ElseIf ScriptLines(i).MoveTo > -1 Then
+					i = ScriptLines(i).MoveTo
+				End If
+				If RData.NextDirectory OrElse RData.NextFile Then Exit For
 				If ReturnToParent Then Exit For
 			Next
 
@@ -912,7 +975,7 @@ Class ScriptInterpreter
 			ActiveScript = ActiveSub.Script
 		End If
 
-		Return returnVal
+		Return RData
 
 	End Function
 
@@ -1188,7 +1251,7 @@ Class ScriptInterpreter
 		ElseIf val = "system" Then
 			enc = System.Text.Encoding.Default
 		Else
-			DisplayError("Invalid argument for function!")
+			DisplayError("Invalid argument for function: " + Chr(34) + args(0).Value + Chr(34) + "!")
 		End If
 
 	End Sub
@@ -1369,7 +1432,7 @@ Class ScriptInterpreter
 
 	End Sub
 
-	Private ifcmdArray As String() = {"continue", "next", "end", "nextdir", "return"}
+	Private ifcmdArray As String() = {"continue", "next", "nextdir", "return", "then", "end"}
 
 	Private Sub IfStatement(args() As Argument, negative As Boolean)
 
@@ -1396,6 +1459,13 @@ Class ScriptInterpreter
 		Dim action As String
 		If args.Count = 5 Then onFalse = LCase(args(4).Value)
 
+		If onTrue = "then" Then onFalse = onTrue
+
+		If onTrue = ifcmdArray(4) AndAlso args.Count > 4 Then
+			DisplayError("Too many arguments for function!")
+			Return
+		End If
+
 		If op = Chr(ASCII.Equals) Then
 			isTrue = str1 = str2
 		ElseIf op = Chr(ASCII.SmallerThan) Then
@@ -1421,14 +1491,19 @@ Class ScriptInterpreter
 			'do nothing
 		ElseIf action = ifcmdArray(1) Then
 			If Not InLoop Then DisplayError("Next cannot be called outside a file loop!")
-			NextFile = True
+			RData.NextFile = True
 		ElseIf action = ifcmdArray(2) Then
-			Environment.Exit(1)
-		ElseIf action = ifcmdArray(3) Then
 			If Not InLoop Then DisplayError("NextDir cannot be called outside a file loop!")
-			NextDir = True
-		ElseIf action = ifcmdArray(4) Then
+			RData.NextDirectory = True
+		ElseIf action = ifcmdArray(3) Then
 			ReturnToParent = True
+		ElseIf action = ifcmdArray(4) Then
+			If Not isTrue Then
+				changeLine = ActiveScript.ScriptLines(ActiveSub.CurPos - 1).IfBlock.GetNextEndPoint(ActiveSub.CurPos) - ActiveSub.CurPos
+			End If
+
+		ElseIf action = ifcmdArray(5) Then
+			Environment.Exit(1)
 		Else
 			Dim gotoPos As Integer = getGotoPos(action)
 			If Not gotoPos = Nothing Then
@@ -1507,13 +1582,15 @@ Class ScriptInterpreter
 			Return
 		End If
 
-		Dim result As String = script.Run(section, curDir, curFile, passargs)
-		If result = Nothing Then
+		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
+		If result.Value = Nothing Then
 			DisplayError("Function returned NULL!")
 			Return
 		End If
 
-		var.Value = result
+		RData.NextDirectory = result.NextDirectory
+		RData.NextFile = result.NextFile
+		var.Value = result.Value
 		ReturnToParent = False
 
 	End Sub
@@ -1522,7 +1599,6 @@ Class ScriptInterpreter
 
 		Dim section As String
 		Dim path As String = scriptPath
-		Dim result As String = Nothing
 		Dim minargs As Integer = 2
 
 		If args.Count < minargs Then
@@ -1578,8 +1654,9 @@ Class ScriptInterpreter
 			Array.ConstrainedCopy(args, 3, passargs, 0, passargs.Count)
 		End If
 
-		script.Run(section, curDir, curFile, passargs)
-
+		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
+		RData.NextDirectory = result.NextDirectory
+		RData.NextFile = result.NextFile
 		ReturnToParent = False
 
 	End Sub
