@@ -12,11 +12,13 @@ Class ScriptLine
 	End Operator
 
 	Protected s As String
-	Protected o, l As Integer
+	Protected o, l, m As Integer
+	Protected ifblk As IfBlock
 	Sub New(str As String, originalLine As Integer, line As Integer)
 		s = str
 		l = line
 		o = originalLine
+		m = -1
 	End Sub
 
 	Public Overrides Function ToString() As String
@@ -33,6 +35,24 @@ Class ScriptLine
 		Get
 			Return o
 		End Get
+	End Property
+
+	Property IfBlock As IfBlock
+		Get
+			Return ifblk
+		End Get
+		Set(value As IfBlock)
+			ifblk = value
+		End Set
+	End Property
+
+	Property MoveTo As Integer
+		Get
+			Return m
+		End Get
+		Set(value As Integer)
+			m = value
+		End Set
 	End Property
 
 End Class
@@ -278,17 +298,6 @@ Class SubInfo
 		End Set
 	End Property
 
-	Function GetIfBlockObj(lineNumber As Integer) As IfBlock
-
-		For b As Integer = 0 To ifBlockArray.Count - 1
-			For l As Integer = 0 To ifBlockArray(b).StartPoints.Count - 1
-				If ifBlockArray(b).StartPoints(l) = lineNumber Then Return ifBlockArray(b)
-			Next
-		Next
-		Return Nothing
-
-	End Function
-
 	Sub AddIfBlock(ifBlockObj As IfBlock)
 
 		Array.Resize(ifBlockArray, ifBlockArray.Count + 1)
@@ -318,33 +327,40 @@ Class IfBlock
 
 	End Operator
 
-	Protected startpos(), endpos As Integer
+	Protected startpos As Integer
+	Protected endpos() As Integer = {}
 
 	Sub New(startPoint As Integer)
-		startpos = {startPoint}
+		startpos = startPoint
 	End Sub
 
-	Property EndPoint As Integer
-		Get
-			Return endpos
-		End Get
-		Set(value As Integer)
-			endpos = value
-		End Set
-	End Property
-
-	ReadOnly Property StartPoints As Integer()
+	ReadOnly Property StartPoint As Integer
 		Get
 			Return startpos
 		End Get
 	End Property
 
-	Sub AddElse(pos As Integer)
+	ReadOnly Property EndPoints As Integer()
+		Get
+			Return endpos
+		End Get
+	End Property
 
-		Array.Resize(startpos, startpos.Count + 1)
-		startpos(startpos.Count - 1) = pos
+	Sub AddEndPoint(pos As Integer)
+
+		Array.Resize(endpos, endpos.Count + 1)
+		endpos(endpos.Count - 1) = pos
 
 	End Sub
+
+	Function GetNextEndPoint(curpos As Integer) As Integer
+
+		For i As Integer = 0 To endpos.Count - 1
+			If curpos < endpos(i) Then Return endpos(i)
+		Next
+		Return -1
+
+	End Function
 
 End Class
 
@@ -487,7 +503,6 @@ Class ScriptInterpreter
 		Dim gotoCount As Integer = 0
 		Dim newScript As ScriptLine() = {}
 		Dim curLine As Integer = -1
-		Dim extra As Integer = 0
 
 		'gather info for quick jumping and vars
 		For i As Integer = 0 To ScriptFile.Count - 1
@@ -548,22 +563,26 @@ Class ScriptInterpreter
 							ifLevel += 1
 							Array.Resize(openIfBlocks, ifLevel + 1)
 							openIfBlocks(ifLevel) = New IfBlock(curLine)
+							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
 						End If
 
 					Case "else"
 						If ifLevel = -1 Then DisplayError("Else must follow If/IfNot!")
-						openIfBlocks(ifLevel).AddElse(curLine)
+						newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+						openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
 
 					Case "elseif", "elseifnot"
 						Dim args As Argument() = ParseArgs(argstring)
 						If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
 							If ifLevel = -1 Then DisplayError("ElseIf/ElseIfNot must follow If/IfNot!")
-							openIfBlocks(ifLevel).AddElse(curLine)
+							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+							openIfBlocks(ifLevel).AddEndPoint(curLine)
 						End If
 
 					Case "endif"
 						If ifLevel = -1 Then DisplayError("EndIf must follow If/IfNot!")
-						openIfBlocks(ifLevel).EndPoint = curLine
+						newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+						openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
 						ifLevel -= 1
 						If ifLevel = -1 Then
 							For Each ifObj As IfBlock In openIfBlocks
@@ -635,24 +654,11 @@ Class ScriptInterpreter
 		Next
 
 		For Each _sub As SubInfo In subArray
-			For Each _ifblock As IfBlock In _sub.IfBlocks
-				If _ifblock.StartPoints.Count > 1 Then
-					For s As Integer = 1 To _ifblock.StartPoints.Count - 1
-						newScript += New ScriptLine("goto " + Chr(ASCII.Quote) + CStr(gotoCount) + Chr(ASCII.Quote), 0, _ifblock.StartPoints(s))
-						newScript.MoveItem(newScript.Count - 1, _ifblock.StartPoints(s))
-						extra += 1
-					Next
-				End If
-				newScript += New ScriptLine("goto " + Chr(ASCII.Quote) + CStr(gotoCount) + Chr(ASCII.Quote), 0, _ifblock.EndPoint + extra)
-				newScript.MoveItem(newScript.Count - 1, _ifblock.EndPoint + extra)
-				extra += 1
-				newScript += New ScriptLine(":" + CStr(gotoCount), 0, _ifblock.EndPoint + 1 + extra)
-				newScript.MoveItem(newScript.Count - 1, _ifblock.EndPoint + 1 + extra)
-				_sub.AddGotoObj(CStr(gotoCount), _ifblock.EndPoint + 1 + extra)
-				gotoCount += 1
-				extra += 1
+			For Each block As IfBlock In _sub.IfBlocks
+				For Each endpoint As Integer In block.EndPoints
+					newScript(endpoint - 1).MoveTo = block.EndPoints(block.EndPoints.Count - 1)
+				Next
 			Next
-			_sub.Location = {_sub.Location(0), _sub.Location(1) + extra}
 		Next
 
 		If Not openSub Is Nothing Then
@@ -755,11 +761,7 @@ Class ScriptInterpreter
 			Else
 				nextChar = Nothing
 			End If
-			If curChar = Chr(ASCII.Backslash) Then
-				If stringOpen Then tempArg.Append(curChar)
-				escape = Not escape
-				argType = Argument.ArgType.Str
-			ElseIf curChar = Chr(ASCII.Quote) Then
+			If curChar = Chr(ASCII.Quote) Then
 				If Not escape Then
 					stringOpen = Not stringOpen
 				Else
@@ -770,6 +772,9 @@ Class ScriptInterpreter
 			ElseIf stringOpen Then
 				tempArg.Append(curChar)
 				escape = False
+			ElseIf curChar = Chr(ASCII.Backslash) Then
+				escape = Not escape
+				argType = Argument.ArgType.Str
 			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
 				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
 					tempArg.Append(temp)
@@ -854,15 +859,14 @@ Class ScriptInterpreter
 		If ActiveSub.Location(1) - ActiveSub.Location(0) > 1 Then
 			For i As Integer = ActiveSub.Location(0) + 1 To ActiveSub.Location(1) - 1
 				changeLine = 0
-				Dim line As String = ScriptLines(i).ToString
-				If line(0) = Chr(ASCII.Colon) Then Continue For
+				If ScriptLines(i).ToString(0) = Chr(ASCII.Colon) Then Continue For
 				If CommandsProcessed >= MaxCommands Then
 					DisplayError("Maximum number of commands reached!")
 					Exit For
 				End If
 				ActiveSub.CurPos = i + 1
 				CommandsProcessed += 1
-				Dim argArray() As String = Split(line)
+				Dim argArray() As String = Split(ScriptLines(i).ToString)
 				Dim command As String = argArray(0)
 				Dim args As String = String.Empty
 				If argArray.Count > 1 Then
@@ -953,7 +957,11 @@ Class ScriptInterpreter
 						DisplayError("Invalid command: " + Chr(34) + command + Chr(34) + "!")
 				End Select
 
-				i += changeLine
+				If Not changeLine = 0 Then
+					i += changeLine
+				ElseIf ScriptLines(i).MoveTo > -1 Then
+					i = ScriptLines(i).MoveTo
+				End If
 				If RData.NextDirectory OrElse RData.NextFile Then Exit For
 				If ReturnToParent Then Exit For
 			Next
@@ -1490,19 +1498,8 @@ Class ScriptInterpreter
 		ElseIf action = ifcmdArray(3) Then
 			ReturnToParent = True
 		ElseIf action = ifcmdArray(4) Then
-			Dim ifObj As IfBlock = ActiveSub.GetIfBlockObj(ActiveSub.CurPos - 1)
 			If Not isTrue Then
-				If ifObj.StartPoints.Count > 1 Then
-					For i As Integer = 0 To ifObj.StartPoints.Count - 1
-						If ifObj.StartPoints(i) > ActiveSub.CurPos Then
-							changeLine = ifObj.StartPoints(i) - ActiveSub.CurPos + 2
-							Exit For
-						End If
-						changeLine = ifObj.EndPoint - ActiveSub.CurPos
-					Next
-				Else
-					changeLine = ifObj.EndPoint - ActiveSub.CurPos
-				End If
+				changeLine = ActiveScript.ScriptLines(ActiveSub.CurPos - 1).IfBlock.GetNextEndPoint(ActiveSub.CurPos) - ActiveSub.CurPos
 			End If
 
 		ElseIf action = ifcmdArray(5) Then
