@@ -180,4 +180,21 @@ End Class
 
 	End Function
 
+	<Extension> Public Sub Trim(Of T)(ByRef a As T())
+
+		Dim empty As Integer = -1
+
+		For i As Integer = a.Count - 1 To 0 Step -1
+			If Not a(i) Is Nothing Then
+				empty = i + 1
+				Exit For
+			End If
+		Next
+
+		If Not empty > a.Count - 1 Then
+			Array.Resize(a, empty)
+		End If
+
+	End Sub
+
 End Module

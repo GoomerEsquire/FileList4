@@ -61,8 +61,26 @@ Class Argument
 
 	Shared Operator +(ary() As Argument, obj As Argument) As Argument()
 
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
+		Dim nextempty As Integer = -1
+
+		For i As Integer = 0 To ary.Count - 1
+			If ary(i) Is Nothing Then
+				nextempty = i
+				Exit For
+			End If
+		Next
+
+		If nextempty = -1 Then
+			If ary.Count = 0 Then
+				nextempty = 0
+				Array.Resize(ary, 1)
+			Else
+				nextempty = ary.Count - 1
+				Array.Resize(ary, ary.Count * 2)
+			End If
+		End If
+
+		ary(nextempty) = obj
 		Return ary
 
 	End Operator
@@ -215,7 +233,6 @@ Class SubInfo
 	Protected loc(1) As Integer
 	Protected gotoArray As GotoInfo() = {}
 	Protected ifBlockArray As IfBlock() = {}
-	Protected curifblock As IfBlock
 
 	Sub New(script As ScriptInterpreter, section As String)
 		scriptobj = script
@@ -746,7 +763,7 @@ Class ScriptInterpreter
 		Dim temp, tempArg As New StringBuilder
 		Dim move As Integer = 0
 		Dim curChar, nextChar As Char
-		Dim newArg() As Argument = {}
+		Dim newArg(4) As Argument
 		Dim argType As Argument.ArgType = Argument.ArgType.Var
 		Dim escape As Boolean = False
 
@@ -819,6 +836,8 @@ Class ScriptInterpreter
 		If argType = Argument.ArgType.Str OrElse tempArg.Length > 0 Then
 			newArg += New Argument(tempArg.ToString, argType)
 		End If
+
+		newArg.Trim()
 
 		Return newArg
 
