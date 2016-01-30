@@ -575,37 +575,53 @@ Class ScriptInterpreter
 						End If
 
 					Case "if", "ifnot"
-						Dim args As Argument() = ParseArgs(argstring)
-						If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
-							ifLevel += 1
-							Array.Resize(openIfBlocks, ifLevel + 1)
-							openIfBlocks(ifLevel) = New IfBlock(curLine)
-							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+						If Not openSub Is Nothing Then
+							Dim args As Argument() = ParseArgs(argstring)
+							If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
+								ifLevel += 1
+								Array.Resize(openIfBlocks, ifLevel + 1)
+								openIfBlocks(ifLevel) = New IfBlock(curLine)
+								newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+							End If
+						Else
+							DisplayError("Invalid use of If/IfNot!")
 						End If
 
 					Case "else"
-						If ifLevel = -1 Then DisplayError("Else must follow If/IfNot!")
-						newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
-						openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+						If Not openSub Is Nothing Then
+							If ifLevel = -1 Then DisplayError("Else must follow If/IfNot!")
+							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+							openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+						Else
+							DisplayError("Invalid use of Else!")
+						End If
 
 					Case "elseif", "elseifnot"
-						Dim args As Argument() = ParseArgs(argstring)
-						If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
-							If ifLevel = -1 Then DisplayError("ElseIf/ElseIfNot must follow If/IfNot!")
-							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
-							openIfBlocks(ifLevel).AddEndPoint(curLine)
+						If Not openSub Is Nothing Then
+							Dim args As Argument() = ParseArgs(argstring)
+							If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
+								If ifLevel = -1 Then DisplayError("ElseIf/ElseIfNot must follow If/IfNot!")
+								newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+								openIfBlocks(ifLevel).AddEndPoint(curLine)
+							End If
+						Else
+							DisplayError("Invalid use of ElseIf/ElseIfNot!")
 						End If
 
 					Case "endif"
-						If ifLevel = -1 Then DisplayError("EndIf must follow If/IfNot!")
-						newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
-						openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
-						ifLevel -= 1
-						If ifLevel = -1 Then
-							For Each ifObj As IfBlock In openIfBlocks
-								openSub.AddIfBlock(ifObj)
-							Next
-							openIfBlocks = {}
+						If Not openSub Is Nothing Then
+							If ifLevel = -1 Then DisplayError("EndIf must follow If/IfNot!")
+							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
+							openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+							ifLevel -= 1
+							If ifLevel = -1 Then
+								For Each ifObj As IfBlock In openIfBlocks
+									openSub.AddIfBlock(ifObj)
+								Next
+								openIfBlocks = {}
+							End If
+						Else
+							DisplayError("Invalid use of EndIf!")
 						End If
 
 					Case "end"
@@ -765,7 +781,6 @@ Class ScriptInterpreter
 		Dim curChar, nextChar As Char
 		Dim newArg(4) As Argument
 		Dim argType As Argument.ArgType = Argument.ArgType.Var
-		Dim escape As Boolean = False
 
 		For i As Integer = 1 To source.Length
 			If i > source.Length Then
@@ -779,18 +794,10 @@ Class ScriptInterpreter
 				nextChar = Nothing
 			End If
 			If curChar = Chr(ASCII.Quote) Then
-				If Not escape Then
-					stringOpen = Not stringOpen
-				Else
-					tempArg.Append(curChar)
-					escape = False
-				End If
+				stringOpen = Not stringOpen
 				argType = Argument.ArgType.Str
 			ElseIf stringOpen Then
 				tempArg.Append(curChar)
-				escape = False
-			ElseIf curChar = Chr(ASCII.Backslash) Then
-				escape = Not escape
 				argType = Argument.ArgType.Str
 			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
 				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
@@ -998,21 +1005,31 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public fixedVars() As String = {"newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight", "fileextension"}
+	Public fixedVars() As String = {"q", "newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight", "fileextension"}
 
 	Function GetFixedVar(varName As String) As String
 
 		Select Case LCase(varName)
+			Case "q"
+				Return Chr(34)
 			Case "newline"
 				Return vbCrLf
 			Case "dircount"
-				If AccessDenied Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
+					DisplayError("No directory-object!")
+				ElseIf AccessDenied Then
 					DisplayError("Access denied in " + Chr(34) + curDir.FullName + Chr(34) + "!")
 				Else
 					Return CStr(curDir.GetDirectories.Count)
 				End If
 			Case "filecount"
-				If AccessDenied Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
+					DisplayError("No directory-object!")
+				ElseIf AccessDenied Then
 					DisplayError("Access denied in " + Chr(34) + curDir.FullName + Chr(34) + "!")
 				Else
 					Return CStr(curDir.GetFiles.Count)
@@ -1020,7 +1037,9 @@ Class ScriptInterpreter
 			Case "accessdenied"
 				Return AccessDenied.ToString
 			Case "filepath"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				ElseIf curFile Is Nothing Then
 					DisplayError("No file-object in " + Chr(34) + curDir.FullName + Chr(34) + "!")
@@ -1028,7 +1047,9 @@ Class ScriptInterpreter
 					Return curFile.FullName
 				End If
 			Case "filename"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				ElseIf curFile Is Nothing Then
 					DisplayError("No file-object in " + Chr(34) + curDir.FullName + Chr(34) + "!")
@@ -1036,7 +1057,9 @@ Class ScriptInterpreter
 					Return curFile.Name
 				End If
 			Case "filenamenx"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				ElseIf curFile Is Nothing Then
 					DisplayError("No file-object in " + Chr(34) + curDir.FullName + Chr(34) + "!")
@@ -1044,16 +1067,19 @@ Class ScriptInterpreter
 					Return Path.GetFileNameWithoutExtension(curFile.FullName)
 				End If
 			Case "fileextension"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				ElseIf curFile Is Nothing Then
 					DisplayError("No file-object in " + Chr(34) + curDir.FullName + Chr(34) + "!")
 				Else
 					Return Path.GetExtension(curFile.FullName)
 				End If
-
 			Case "size"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				ElseIf curFile Is Nothing Then
 					DisplayError("No file-object in " + Chr(34) + curDir.FullName + Chr(34) + "!")
@@ -1061,19 +1087,27 @@ Class ScriptInterpreter
 					Return CStr(curFile.Length)
 				End If
 			Case "folder"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				Else
 					Return curDir.Name
 				End If
 			Case "path"
-				If curDir Is Nothing Then
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				ElseIf curDir Is Nothing Then
 					DisplayError("No directory-object!")
 				Else
 					Return curDir.FullName
 				End If
 			Case "initpath"
-				Return InitPath(InitPath.Count - 1)
+				If callStack(0).Name = "Init" Then
+					Return String.Empty
+				Else
+					Return InitPath(InitPath.Count - 1)
+				End If
 			Case "exepath"
 				Return My.Application.Info.DirectoryPath
 			Case "year"
