@@ -1,6 +1,63 @@
 ﻿Imports System.IO
 Imports System.Text
 
+Public Class ReturnData
+
+	Protected nfile, ndir, rtn As Boolean
+	Protected val As String = String.Empty
+	Protected limit As Boolean = False
+
+	Sub New(NoReturn As Boolean)
+		limit = NoReturn
+	End Sub
+
+	Property Value As String
+		Get
+			Return val
+		End Get
+		Set(value As String)
+			val = value
+		End Set
+	End Property
+
+	Property NextFile As Boolean
+		Get
+			Return nfile
+		End Get
+		Set(value As Boolean)
+			nfile = value
+		End Set
+	End Property
+
+	Property NextDirectory As Boolean
+		Get
+			Return ndir
+		End Get
+		Set(value As Boolean)
+			ndir = value
+		End Set
+	End Property
+
+	Property ReturnToParent As Boolean
+		Get
+			Return rtn
+		End Get
+		Set(value As Boolean)
+			If Not limit Then
+				rtn = value
+			End If
+		End Set
+	End Property
+
+	Public Sub Reset()
+		val = String.Empty
+		nfile = False
+		ndir = False
+		rtn = False
+	End Sub
+
+End Class
+
 Class ScriptLine
 
 	Shared Operator +(ary() As ScriptLine, obj As ScriptLine) As ScriptLine()
@@ -233,10 +290,12 @@ Class SubInfo
 	Protected loc(1) As Integer
 	Protected gotoArray As GotoInfo() = {}
 	Protected ifBlockArray As IfBlock() = {}
+	Protected RData As ReturnData
 
-	Sub New(script As ScriptInterpreter, section As String)
+	Sub New(script As ScriptInterpreter, section As String, noReturn As Boolean)
 		scriptobj = script
 		n = section
+		RData = New ReturnData(noReturn)
 	End Sub
 
 	Property Location As Integer()
@@ -302,8 +361,10 @@ Class SubInfo
 
 	End Function
 
-	Sub ClearVariables()
+	Sub Reset()
 		vars = {}
+		pos = 0
+		RData.Reset()
 	End Sub
 
 	Property CurPos As Integer
@@ -325,6 +386,12 @@ Class SubInfo
 	Public ReadOnly Property IfBlocks() As IfBlock()
 		Get
 			Return ifBlockArray
+		End Get
+	End Property
+
+	Public ReadOnly Property ReturnData As ReturnData
+		Get
+			Return RData
 		End Get
 	End Property
 
@@ -408,7 +475,7 @@ Class ScriptInterpreter
 	Protected ScriptLines As ScriptLine() = {}
 	Protected ScriptFile As String() = {}
 	Sub New(path As String, allowFL4 As Boolean)
-		Dim newsub As New SubInfo(Me, "Init")
+		Dim newsub As New SubInfo(Me, "Init", True)
 		callStack += newsub
 		ActiveSub = newsub
 		ActiveScript = Me
@@ -445,8 +512,6 @@ Class ScriptInterpreter
 	Protected curDir As DirectoryInfo
 	Protected sWatch As New Stopwatch
 	Protected enc As System.Text.Encoding = System.Text.Encoding.Default
-	Protected ReturnToParent As Boolean = False
-	Protected RData As ReturnData
 
 	Enum ErrorMode
 		Bail
@@ -558,7 +623,11 @@ Class ScriptInterpreter
 						If args.Count > 0 Then
 							Dim s1 As SubInfo = GetSub(Me, args(0).Value)
 							If s1 Is Nothing Then
-								openSub = New SubInfo(Me, args(0).Value)
+								If LCase(args(0).Value) = "main" Then
+									openSub = New SubInfo(Me, args(0).Value, True)
+								Else
+									openSub = New SubInfo(Me, args(0).Value, False)
+								End If
 							ElseIf Not s1.Location(0) = Nothing Then
 								DisplayError("Sub already exists: " + Chr(34) + args(0).Value + Chr(34) + "!")
 								Return {}
@@ -854,8 +923,6 @@ Class ScriptInterpreter
 
 	Function Run(subName As String, dInfo As DirectoryInfo, fInfo As FileInfo, Optional arguments As Argument() = Nothing) As ReturnData
 
-		RData = New ReturnData
-
 		ActiveScript = Me
 		ActiveSub = GetSub(Me, subName)
 
@@ -868,7 +935,6 @@ Class ScriptInterpreter
 
 		curFile = fInfo
 		curDir = dInfo
-		ReturnToParent = False
 
 		If arguments Is Nothing Then arguments = {}
 		If arguments.Count < ActiveSub.Arguments.Count Then
@@ -883,6 +949,8 @@ Class ScriptInterpreter
 		Next
 
 		If ActiveSub.Location(1) - ActiveSub.Location(0) > 1 Then
+			ActiveSub.Reset()
+
 			For i As Integer = ActiveSub.Location(0) + 1 To ActiveSub.Location(1) - 1
 				changeLine = 0
 				If ScriptLines(i).ToString(0) = Chr(ASCII.Colon) Then Continue For
@@ -913,14 +981,14 @@ Class ScriptInterpreter
 					Case "ifnot", "elseifnot"
 						IfStatement(ParseArgs(args), True)
 					Case "return"
-						RData.Value = _Return(ParseArgs(args))
-						ReturnToParent = True
+						ActiveSub.ReturnData.Value = _Return(ParseArgs(args))
+						ActiveSub.ReturnData.ReturnToParent = True
 					Case "nextdir"
 						If Not InLoop Then DisplayError("NextDir cannot be called outside of a file loop!")
-						RData.NextDirectory = True
+						ActiveSub.ReturnData.NextDirectory = True
 					Case "next"
 						If Not InLoop Then DisplayError("Next cannot be called outside of a file loop!")
-						RData.NextFile = True
+						ActiveSub.ReturnData.NextFile = True
 					Case "goto"
 						Jump(ParseArgs(args))
 					Case "print"
@@ -988,12 +1056,12 @@ Class ScriptInterpreter
 				ElseIf ScriptLines(i).MoveTo > -1 Then
 					i = ScriptLines(i).MoveTo
 				End If
-				If RData.NextDirectory OrElse RData.NextFile Then Exit For
-				If ReturnToParent Then Exit For
+				If ActiveSub.ReturnData.NextDirectory OrElse ActiveSub.ReturnData.NextFile Then Exit For
+				If ActiveSub.ReturnData.ReturnToParent Then Exit For
 			Next
-
-			ActiveSub.ClearVariables()
 		End If
+
+		Dim rdata As ReturnData = ActiveSub.ReturnData
 
 		Array.Resize(callStack, callStack.Count - 1)
 		If callStack.Length > 0 Then
@@ -1001,7 +1069,7 @@ Class ScriptInterpreter
 			ActiveScript = ActiveSub.Script
 		End If
 
-		Return RData
+		Return rdata
 
 	End Function
 
@@ -1544,17 +1612,16 @@ Class ScriptInterpreter
 			'do nothing
 		ElseIf action = ifcmdArray(1) Then
 			If Not InLoop Then DisplayError("Next cannot be called outside a file loop!")
-			RData.NextFile = True
+			ActiveSub.ReturnData.NextFile = True
 		ElseIf action = ifcmdArray(2) Then
 			If Not InLoop Then DisplayError("NextDir cannot be called outside a file loop!")
-			RData.NextDirectory = True
+			ActiveSub.ReturnData.NextDirectory = True
 		ElseIf action = ifcmdArray(3) Then
-			ReturnToParent = True
+			ActiveSub.ReturnData.ReturnToParent = True
 		ElseIf action = ifcmdArray(4) Then
 			If Not isTrue Then
 				changeLine = ActiveScript.ScriptLines(ActiveSub.CurPos - 1).IfBlock.GetNextEndPoint(ActiveSub.CurPos) - ActiveSub.CurPos
 			End If
-
 		ElseIf action = ifcmdArray(5) Then
 			Environment.Exit(1)
 		Else
@@ -1641,10 +1708,9 @@ Class ScriptInterpreter
 			Return
 		End If
 
-		RData.NextDirectory = result.NextDirectory
-		RData.NextFile = result.NextFile
+		ActiveSub.ReturnData.NextDirectory = result.NextDirectory
+		ActiveSub.ReturnData.NextFile = result.NextFile
 		var.Value = result.Value
-		ReturnToParent = False
 
 	End Sub
 
@@ -1708,9 +1774,8 @@ Class ScriptInterpreter
 		End If
 
 		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
-		RData.NextDirectory = result.NextDirectory
-		RData.NextFile = result.NextFile
-		ReturnToParent = False
+		ActiveSub.ReturnData.NextDirectory = result.NextDirectory
+		ActiveSub.ReturnData.NextFile = result.NextFile
 
 	End Sub
 
@@ -1759,8 +1824,6 @@ Class ScriptInterpreter
 		End Try
 
 		FileLoop(args(0).Value, args(2).Value)
-
-		ReturnToParent = False
 
 		If Not SW Is Nothing Then SW.Close()
 

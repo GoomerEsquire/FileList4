@@ -126,40 +126,6 @@ Module Module1
 
 End Module
 
-Public Class ReturnData
-
-	Protected nfile, ndir As Boolean
-	Protected val As String
-
-	Property Value As String
-		Get
-			Return val
-		End Get
-		Set(value As String)
-			val = value
-		End Set
-	End Property
-
-	Property NextFile As Boolean
-		Get
-			Return nfile
-		End Get
-		Set(value As Boolean)
-			nfile = value
-		End Set
-	End Property
-
-	Property NextDirectory As Boolean
-		Get
-			Return ndir
-		End Get
-		Set(value As Boolean)
-			ndir = value
-		End Set
-	End Property
-
-End Class
-
 <HideModuleName> Module Extensions
 
 	<Extension> Public Function MoveItem(Of T)(ByRef a As T(), source As Integer, destination As Integer) As Boolean
@@ -182,6 +148,7 @@ End Class
 
 	<Extension> Public Sub Trim(Of T)(ByRef a As T())
 
+		If a.Count = 0 Then Return
 		Dim empty As Integer = -1
 
 		For i As Integer = a.Count - 1 To 0 Step -1
