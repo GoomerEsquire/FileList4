@@ -148,19 +148,25 @@ End Module
 
 	<Extension> Public Sub Trim(Of T)(ByRef a As T())
 
-		If a.Count = 0 Then Return
-		Dim empty As Integer = -1
+		If a.Length = 0 Then Return
+		Dim endIndex As Integer = a.Length - 1
 
-		For i As Integer = a.Count - 1 To 0 Step -1
+		For i As Integer = a.Length - 1 To 0 Step -1
 			If Not a(i) Is Nothing Then
-				empty = i + 1
+				endIndex = i
 				Exit For
 			End If
 		Next
 
-		If Not empty > a.Count - 1 Then
-			Array.Resize(a, empty)
-		End If
+		If endIndex = a.Length - 1 Then Return
+		Array.Resize(a, endIndex + 1)
+
+	End Sub
+
+	<Extension> Public Sub Add(Of T)(ByRef a As T(), item As T)
+
+		Array.Resize(a, a.Length + 1)
+		a(a.Length - 1) = item
 
 	End Sub
 

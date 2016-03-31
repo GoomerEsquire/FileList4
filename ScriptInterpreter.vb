@@ -37,17 +37,10 @@ End Class
 
 Class ScriptLine
 
-	Shared Operator +(ary() As ScriptLine, obj As ScriptLine) As ScriptLine()
-
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
-		Return ary
-
-	End Operator
-
 	Protected s As String
 	Protected o, l, m As Integer
 	Protected ifblk As IfBlock
+
 	Sub New(str As String, originalLine As Integer, line As Integer)
 		s = str
 		l = line
@@ -55,7 +48,7 @@ Class ScriptLine
 		m = -1
 	End Sub
 
-	Public Overrides Function ToString() As String
+	Overrides Function ToString() As String
 		Return s
 	End Function
 
@@ -119,7 +112,7 @@ Class Argument
 
 	End Operator
 
-	Public Enum ArgType
+	Friend Enum ArgType
 		Var
 		Str
 	End Enum
@@ -131,10 +124,13 @@ Class Argument
 		t = objectType
 	End Sub
 
-	ReadOnly Property Value As String
+	Property Value As String
 		Get
 			Return val
 		End Get
+		Set(value As String)
+			val = value
+		End Set
 	End Property
 
 	ReadOnly Property Type As ArgType
@@ -169,14 +165,6 @@ End Class
 
 Class Variable
 
-	Shared Operator +(ary() As Variable, obj As Variable) As Variable()
-
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
-		Return ary
-
-	End Operator
-
 	Enum varScope
 		Unknown
 		Priv
@@ -207,21 +195,13 @@ Class Variable
 		End Get
 	End Property
 
-	Public Overrides Function ToString() As String
+	Overrides Function ToString() As String
 		Return v
 	End Function
 
 End Class
 
 Class GotoInfo
-
-	Shared Operator +(ary() As GotoInfo, obj As GotoInfo) As GotoInfo()
-
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
-		Return ary
-
-	End Operator
 
 	Protected id As String
 	Protected pos As Integer
@@ -243,21 +223,13 @@ Class GotoInfo
 		End Get
 	End Property
 
-	Public Overrides Function ToString() As String
+	Overrides Function ToString() As String
 		Return id
 	End Function
 
 End Class
 
 Class SubInfo
-
-	Shared Operator +(ary() As SubInfo, obj As SubInfo) As SubInfo()
-
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
-		Return ary
-
-	End Operator
 
 	Protected scriptobj As ScriptInterpreter
 	Protected vars As Variable() = {}
@@ -306,17 +278,13 @@ Class SubInfo
 		End Set
 	End Property
 
-	Sub AddGotoObj(name As String, position As Integer)
-
-		Array.Resize(gotoArray, gotoArray.Count + 1)
-		gotoArray(gotoArray.Count - 1) = New GotoInfo(name, position)
-
-	End Sub
-
-	ReadOnly Property GotoObjects As GotoInfo()
+	Property GotoObjects As GotoInfo()
 		Get
 			Return gotoArray
 		End Get
+		Set(value As GotoInfo())
+			gotoArray = value
+		End Set
 	End Property
 
 	ReadOnly Property Variables() As Variable()
@@ -334,7 +302,7 @@ Class SubInfo
 		End If
 
 		var = New Variable(name, Variable.varScope.Priv)
-		vars += var
+		vars.Add(var)
 		Return var
 
 	End Function
@@ -355,26 +323,22 @@ Class SubInfo
 		End Set
 	End Property
 
-	Sub AddIfBlock(ifBlockObj As IfBlock)
-
-		Array.Resize(ifBlockArray, ifBlockArray.Count + 1)
-		ifBlockArray(ifBlockArray.Count - 1) = ifBlockObj
-
-	End Sub
-
-	Public ReadOnly Property IfBlocks() As IfBlock()
+	Friend Property IfBlocks() As IfBlock()
 		Get
 			Return ifBlockArray
 		End Get
+		Set(value As IfBlock())
+			ifBlockArray = value
+		End Set
 	End Property
 
-	Public ReadOnly Property ReturnData As ReturnData
+	Friend ReadOnly Property ReturnData As ReturnData
 		Get
 			Return RData
 		End Get
 	End Property
 
-	Public Property ReturnToParent As Boolean
+	Friend Property ReturnToParent As Boolean
 		Get
 			Return rtp
 		End Get
@@ -383,21 +347,13 @@ Class SubInfo
 		End Set
 	End Property
 
-	Public Overrides Function ToString() As String
+	Overrides Function ToString() As String
 		Return n
 	End Function
 
 End Class
 
 Class IfBlock
-
-	Shared Operator +(ary() As IfBlock, obj As IfBlock) As IfBlock()
-
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
-		Return ary
-
-	End Operator
 
 	Protected startpos As Integer
 	Protected endpos() As Integer = {}
@@ -412,18 +368,14 @@ Class IfBlock
 		End Get
 	End Property
 
-	ReadOnly Property EndPoints As Integer()
+	Property EndPoints As Integer()
 		Get
 			Return endpos
 		End Get
+		Set(value As Integer())
+			endpos = value
+		End Set
 	End Property
-
-	Sub AddEndPoint(pos As Integer)
-
-		Array.Resize(endpos, endpos.Count + 1)
-		endpos(endpos.Count - 1) = pos
-
-	End Sub
 
 	Function GetNextEndPoint(curpos As Integer) As Integer
 
@@ -438,19 +390,11 @@ End Class
 
 Class ScriptInterpreter
 
-	Shared Operator +(ary() As ScriptInterpreter, obj As ScriptInterpreter) As ScriptInterpreter()
-
-		Array.Resize(ary, ary.Count + 1)
-		ary(ary.Count - 1) = obj
-		Return ary
-
-	End Operator
-
-	Public Overrides Function ToString() As String
+	Overrides Function ToString() As String
 		Return scriptPath
 	End Function
 
-	Public Function TranslatePos(line As Integer) As Integer
+	Private Function TranslatePos(line As Integer) As Integer
 
 		For Each lineObj As ScriptLine In ScriptLines
 			If lineObj.Line = line Then Return lineObj.OriginalLine
@@ -462,17 +406,20 @@ Class ScriptInterpreter
 	Protected scriptPath As String
 	Protected ScriptLines As ScriptLine() = {}
 	Protected ScriptFile As String() = {}
+
 	Sub New(path As String, allowFL4 As Boolean)
 		Dim newsub As New SubInfo(Me, "Init")
-		callStack += newsub
+		callStack.Add(newsub)
 		ActiveSub = newsub
 		ActiveScript = Me
+		keyWords = MakeKeywords()
+		fixedVars = MakeFixedVars()
 		If LCase(path) = "fl4" Then
 			ScriptFile = Split(My.Resources.fl4, vbCrLf)
 			scriptPath = path
 		Else
 			Dim finfo As New FileInfo(path)
-			If Not allowFL4 And LCase(finfo.Extension) = ".fl4" Then
+			If Not allowFL4 AndAlso LCase(finfo.Extension) = ".fl4" Then
 				DisplayError("No FL4 files allowed beyond this point! Call FLS files instead.")
 				Return
 			End If
@@ -507,7 +454,7 @@ Class ScriptInterpreter
 		KeepGoing
 	End Enum
 
-	Sub DisplayError(text As String)
+	Friend Sub DisplayError(text As String)
 
 		If MainScript Is Nothing Then MainScript = Me
 
@@ -550,7 +497,7 @@ Class ScriptInterpreter
 
 	End Sub
 
-	Function NewVar(name As String) As Variable
+	Private Function NewVar(name As String) As Variable
 
 		Dim var As Variable = GetVarObj(name, Variable.varScope.Pub)
 		If var IsNot Nothing Then
@@ -559,12 +506,12 @@ Class ScriptInterpreter
 		End If
 
 		var = New Variable(name, Variable.varScope.Pub)
-		vars += var
+		vars.Add(var)
 		Return var
 
 	End Function
 
-	Function CompileInfo() As ScriptLine()
+	Private Function CompileInfo() As ScriptLine()
 
 		Dim openSub As SubInfo = Nothing
 		Dim loc0 As Integer
@@ -583,7 +530,7 @@ Class ScriptInterpreter
 			If GetChar(line, 1) = Chr(ASCII.Apostrophe) Then Continue For
 			curLine += 1
 			ActiveSub.CurPos = i + 1
-			newScript += New ScriptLine(line, i, curLine)
+			newScript.Add(New ScriptLine(line, i, curLine))
 
 			If Not openSub Is Nothing AndAlso line(0) = Chr(ASCII.Colon) Then
 				Dim gotoname As String = line.Substring(1, line.Length - 1)
@@ -591,7 +538,7 @@ Class ScriptInterpreter
 					DisplayError("GoTo-Targets cannot be numeric!")
 					Return {}
 				Else
-					openSub.AddGotoObj(gotoname, curLine)
+					openSub.GotoObjects.Add(New GotoInfo(gotoname, curLine))
 				End If
 			Else
 				Dim argArray() As String = Split(line)
@@ -602,7 +549,7 @@ Class ScriptInterpreter
 				End If
 
 				Select Case LCase(command)
-					Case "sub"
+					Case keyWords(kword._sub)
 						If Not openSub Is Nothing Then
 							DisplayError("Sub not closed: " + Chr(34) + openSub.Name + Chr(34) + "!")
 							Return {}
@@ -627,10 +574,10 @@ Class ScriptInterpreter
 							Return {}
 						End If
 
-					Case "if", "ifnot"
+					Case keyWords(kword._if), keyWords(kword.ifnot)
 						If Not openSub Is Nothing Then
 							Dim args As Argument() = ParseArgs(argstring)
-							If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
+							If args.Count > 3 AndAlso LCase(args(3).Value) = keyWords(kword._then) Then
 								ifLevel += 1
 								Array.Resize(openIfBlocks, ifLevel + 1)
 								openIfBlocks(ifLevel) = New IfBlock(curLine)
@@ -640,36 +587,36 @@ Class ScriptInterpreter
 							DisplayError("Invalid use of If/IfNot!")
 						End If
 
-					Case "else"
+					Case keyWords(kword._else)
 						If Not openSub Is Nothing Then
 							If ifLevel = -1 Then DisplayError("Else must follow If/IfNot!")
 							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
-							openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+							openIfBlocks(ifLevel).EndPoints.Add(curLine + 1)
 						Else
 							DisplayError("Invalid use of Else!")
 						End If
 
-					Case "elseif", "elseifnot"
+					Case keyWords(kword._elseif), keyWords(kword.elseifnot)
 						If Not openSub Is Nothing Then
 							Dim args As Argument() = ParseArgs(argstring)
-							If args.Count > 3 AndAlso LCase(args(3).Value) = "then" Then
+							If args.Count > 3 AndAlso LCase(args(3).Value) = keyWords(kword._then) Then
 								If ifLevel = -1 Then DisplayError("ElseIf/ElseIfNot must follow If/IfNot!")
 								newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
-								openIfBlocks(ifLevel).AddEndPoint(curLine)
+								openIfBlocks(ifLevel).EndPoints.Add(curLine)
 							End If
 						Else
 							DisplayError("Invalid use of ElseIf/ElseIfNot!")
 						End If
 
-					Case "endif"
+					Case keyWords(kword._endif)
 						If Not openSub Is Nothing Then
 							If ifLevel = -1 Then DisplayError("EndIf must follow If/IfNot!")
 							newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
-							openIfBlocks(ifLevel).AddEndPoint(curLine + 1)
+							openIfBlocks(ifLevel).EndPoints.Add(curLine + 1)
 							ifLevel -= 1
 							If ifLevel = -1 Then
 								For Each ifObj As IfBlock In openIfBlocks
-									openSub.AddIfBlock(ifObj)
+									openSub.IfBlocks.Add(ifObj)
 								Next
 								openIfBlocks = {}
 							End If
@@ -677,16 +624,16 @@ Class ScriptInterpreter
 							DisplayError("Invalid use of EndIf!")
 						End If
 
-					Case "end"
+					Case keyWords(kword._end)
 						Dim args As Argument() = ParseArgs(argstring)
 						If args.Count = 1 Then
-							If LCase(args(0).Value) = "sub" Then
+							If LCase(args(0).Value) = keyWords(kword._sub) Then
 								If openSub Is Nothing Then
 									DisplayError("End Sub must follow Sub!")
 									Return {}
 								End If
 								openSub.Location = {loc0, curLine}
-								subArray += openSub
+								subArray.Add(openSub)
 								openSub = Nothing
 							End If
 						ElseIf openSub Is Nothing Then
@@ -694,7 +641,7 @@ Class ScriptInterpreter
 							Return {}
 						End If
 
-					Case "var"
+					Case keyWords(kword.var)
 						If openSub Is Nothing Then
 							Dim args As Argument() = ParseArgs(argstring)
 							If args.Count = 2 Then
@@ -704,19 +651,19 @@ Class ScriptInterpreter
 							End If
 						End If
 
-					Case "call"
+					Case keyWords(kword._call)
 						Dim args As Argument() = ParseArgs(argstring)
-						If Not LCase(args(0).Value) = "this" Then
-							scriptArray += New ScriptInterpreter(args(0).Value, False)
+						If Not LCase(args(0).Value) = keyWords(kword.this) Then
+							scriptArray.Add(New ScriptInterpreter(args(0).Value, False))
 						End If
 
-					Case "function"
+					Case keyWords(kword._function)
 						Dim args As Argument() = ParseArgs(argstring)
-						If Not LCase(args(1).Value) = "this" Then
-							scriptArray += New ScriptInterpreter(args(1).Value, False)
+						If Not LCase(args(1).Value) = keyWords(kword.this) Then
+							scriptArray.Add(New ScriptInterpreter(args(1).Value, False))
 						End If
 
-					Case "onerror"
+					Case keyWords(kword.onerror)
 						Dim args As Argument() = ParseArgs(argstring)
 						If args.Count < 1 Then
 							DisplayError("Missing arguments for OnError!")
@@ -725,11 +672,11 @@ Class ScriptInterpreter
 							DisplayError("Too many arguments for OnError!")
 							Return {}
 						End If
-						If LCase(args(0).Value) = "pause" Then
+						If LCase(args(0).Value) = keyWords(kword.pause) Then
 							OnError = ErrorMode.Pause
-						ElseIf LCase(args(0).Value) = "end" Then
+						ElseIf LCase(args(0).Value) = keyWords(kword._end) Then
 							OnError = ErrorMode.Bail
-						ElseIf LCase(args(0).Value) = "continue" Then
+						ElseIf LCase(args(0).Value) = keyWords(kword._continue) Then
 							OnError = ErrorMode.KeepGoing
 						Else
 							DisplayError("Invalid argument: " + Chr(34) + args(0).Value + Chr(34) + "!")
@@ -755,7 +702,7 @@ Class ScriptInterpreter
 
 	End Function
 
-	Overloads Function GetSub(name As String) As SubInfo
+	Private Overloads Function GetSub(name As String) As SubInfo
 
 		name = LCase(name)
 		For Each s As SubInfo In subArray
@@ -767,7 +714,7 @@ Class ScriptInterpreter
 
 	End Function
 
-	Overloads Function GetSub(script As ScriptInterpreter, name As String) As SubInfo
+	Private Overloads Function GetSub(script As ScriptInterpreter, name As String) As SubInfo
 
 		name = LCase(name)
 		For Each s As SubInfo In subArray
@@ -782,7 +729,7 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public Function GetVarObj(name As String, Optional scope As Variable.varScope = Variable.varScope.Unknown) As Variable
+	Friend Function GetVarObj(name As String, Optional scope As Variable.varScope = Variable.varScope.Unknown) As Variable
 
 		name = LCase(name)
 		If scope = Variable.varScope.Priv OrElse scope = Variable.varScope.Unknown Then
@@ -811,7 +758,7 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public Enum ASCII
+	Friend Enum ASCII
 		Space = 32
 		Plus = 43
 		Quote = 34
@@ -828,7 +775,7 @@ Class ScriptInterpreter
 		If source.Length = 0 Then Return {}
 
 		Dim stringOpen As Boolean = False
-		Dim resolve As Boolean = False
+		Dim mustResolve As Boolean = False
 		Dim temp, tempArg As New StringBuilder
 		Dim move As Integer = 0
 		Dim curChar, nextChar As Char
@@ -846,48 +793,51 @@ Class ScriptInterpreter
 			Else
 				nextChar = Nothing
 			End If
+
 			If curChar = Chr(ASCII.Quote) Then
 				stringOpen = Not stringOpen
 				argType = Argument.ArgType.Str
+
 			ElseIf stringOpen Then
+
 				tempArg.Append(curChar)
 				argType = Argument.ArgType.Str
+
 			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
+
 				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
+					If mustResolve AndAlso temp.Length > 0 Then
+						If Not Resolve(temp) Then Return Nothing
+					End If
 					tempArg.Append(temp)
 					temp.Clear()
 				End If
+
 				newArg += New Argument(tempArg.ToString, argType)
 				argType = Argument.ArgType.Var
 				tempArg.Clear()
-				resolve = False
+				mustResolve = False
+
 			ElseIf nextChar = Nothing OrElse (curChar = Chr(ASCII.Space) AndAlso nextChar = Chr(ASCII.Plus)) Then
+
 				If nextChar = Nothing Then
 					temp.Append(curChar)
 				Else
 					move = +2
-					resolve = True
+					mustResolve = True
 					argType = Argument.ArgType.Str
 				End If
 				If temp.Length > 0 Then
-					If resolve Then
-						If isFixedVar(temp.ToString) Then
-							temp.Replace(temp.ToString, GetFixedVar(temp.ToString))
-						Else
-							Dim tempvar As Variable = GetVarObj(temp.ToString)
-							If Not tempvar Is Nothing Then
-								temp.Replace(temp.ToString, tempvar.Value)
-							Else
-								DisplayError("Variable not declared: " + Chr(34) + temp.ToString + Chr(34) + "!")
-								Return Nothing
-							End If
-						End If
+					If mustResolve Then
+						If Not Resolve(temp) Then Return Nothing
 					End If
 					tempArg.Append(temp)
 					temp.Clear()
 				End If
 			Else
+
 				temp.Append(curChar)
+
 			End If
 			i += move
 			move = 0
@@ -903,7 +853,141 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public keyWords() As String = {"set", "var", "swstop", "swstart", "if", "ifnot", "return", "nextdir", "next", "goto", "print", "write", "replace", "lcase", "ucase", "add", "subtract", "multiply", "divide", "round", "floor", "ceil", "char", "format", "padleft", "padright", "len", "substring", "call", "function", "beep", "title", "readkey", "maxcommands", "fileloop", "end", "encoding", "sleep", "=", "<", ">", "like", "continue", "onerror", "pause", "overwrite", "this", "fl4", "then"}
+	Private Function Resolve(ByRef input As StringBuilder) As Boolean
+
+		If isFixedVar(input.ToString) Then
+			input.Replace(input.ToString, GetFixedVar(input.ToString))
+		Else
+			Dim tempvar As Variable = GetVarObj(input.ToString)
+			If Not tempvar Is Nothing Then
+				input.Replace(input.ToString, tempvar.Value)
+			Else
+				DisplayError("Variable not declared: " + Chr(34) + input.ToString + Chr(34) + "!")
+				Return False
+			End If
+		End If
+
+		Return True
+
+	End Function
+
+	Private keyWords() As String '= {"set", "var", "swstop", "swstart", "if", "elseif", "ifnot", "elseifnot", "return", "nextdir", "next", "goto", "print", "write", "replace", "lcase", "ucase", "add", "subtract", "multiply", "divide", "round", "floor", "ceil", "char", "format", "padleft", "padright", "len", "substring", "call", "function", "beep", "title", "readkey", "maxcommands", "fileloop", "end", "encoding", "sleep", "like", "continue", "onerror", "pause", "overwrite", "this", "fl4", "else", "then"}
+
+	Private Enum kword
+		_sub
+		_set
+		var
+		swstop
+		swstart
+		_if
+		_elseif
+		ifnot
+		elseifnot
+		_endif
+		_return
+		nextdir
+		_next
+		_goto
+		print
+		write
+		replace
+		lcase
+		ucase
+		add
+		subtract
+		multiply
+		divide
+		round
+		floor
+		ceil
+		_char
+		format
+		padleft
+		padright
+		len
+		substring
+		_call
+		_function
+		beep
+		title
+		readkey
+		maxcommands
+		fileloop
+		_end
+		encoding
+		sleep
+		_like
+		_continue
+		onerror
+		pause
+		overwrite
+		this
+		fl4
+		_else
+		_then
+		max
+	End Enum
+
+	Private Function MakeKeywords() As String()
+
+		Dim temp(kword.max - 1) As String
+
+		For i As Integer = 0 To kword.max - 1
+			Dim newkeyword As String = CType(i, kword).ToString
+			If newkeyword(0) = "_" Then newkeyword = newkeyword.Substring(1)
+			temp(i) = newkeyword
+		Next
+
+		Return temp
+
+	End Function
+
+	Private fixedVars() As String '= {"q", "newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "fileextension", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight"}
+
+	Private Enum fvars
+		q
+		newline
+		dircount
+		filecount
+		accessdenied
+		filepath
+		filename
+		filenamenx
+		fileextension
+		size
+		folder
+		path
+		initpath
+		exepath
+		year
+		month
+		day
+		hour
+		minute
+		second
+		msecond
+		utcoffset
+		maxcommands
+		swtime
+		proccommands
+		bufferwidth
+		bufferheight
+		max
+	End Enum
+
+	Private Function MakeFixedVars() As String()
+
+		Dim temp(fvars.max - 1) As String
+
+		For i As Integer = 0 To fvars.max - 1
+			Dim newkeyword As String = CType(i, fvars).ToString
+			'If newkeyword(0) = "_" Then newkeyword = newkeyword.Substring(1)
+			temp(i) = newkeyword
+		Next
+
+		Return temp
+
+	End Function
 
 	Function Run(subName As String, dInfo As DirectoryInfo, fInfo As FileInfo, Optional arguments As Argument() = Nothing) As ReturnData
 
@@ -915,7 +999,7 @@ Class ScriptInterpreter
 			Return Nothing
 		End If
 
-		callStack += ActiveSub
+		callStack.Add(ActiveSub)
 
 		curFile = fInfo
 		curDir = dInfo
@@ -952,84 +1036,84 @@ Class ScriptInterpreter
 				End If
 
 				Select Case LCase(command)
-					Case "set"
+					Case keyWords(kword._set)
 						SetVar(ParseArgs(args), False)
-					Case "var"
+					Case keyWords(kword.var)
 						SetVar(ParseArgs(args), True)
-					Case "swstop"
+					Case keyWords(kword.swstop)
 						sWatch.Stop()
-					Case "swstart"
+					Case keyWords(kword.swstart)
 						sWatch.Restart()
-					Case "if", "elseif"
+					Case keyWords(kword._if), keyWords(kword._elseif)
 						IfStatement(ParseArgs(args), False)
-					Case "ifnot", "elseifnot"
+					Case keyWords(kword.ifnot), keyWords(kword.elseifnot)
 						IfStatement(ParseArgs(args), True)
-					Case "return"
+					Case keyWords(kword._return)
 						ActiveSub.ReturnData.Value = _Return(ParseArgs(args))
 						ActiveSub.ReturnToParent = True
-					Case "nextdir"
+					Case keyWords(kword.nextdir)
 						If Not InLoop Then DisplayError("NextDir cannot be called outside of a file loop!")
 						ActiveSub.ReturnData.NextDirectory = True
-					Case "next"
+					Case keyWords(kword._next)
 						If Not InLoop Then DisplayError("Next cannot be called outside of a file loop!")
 						ActiveSub.ReturnData.NextFile = True
-					Case "goto"
+					Case keyWords(kword._goto)
 						Jump(ParseArgs(args))
-					Case "print"
+					Case keyWords(kword.print)
 						_print(ParseArgs(args))
-					Case "write"
+					Case keyWords(kword.write)
 						_write(ParseArgs(args))
-					Case "replace"
+					Case keyWords(kword.replace)
 						Rep(ParseArgs(args))
-					Case "lcase"
+					Case keyWords(kword.lcase)
 						lcas(ParseArgs(args))
-					Case "ucase"
+					Case keyWords(kword.ucase)
 						ucas(ParseArgs(args))
-					Case "add"
+					Case keyWords(kword.add)
 						Add(ParseArgs(args))
-					Case "subtract"
+					Case keyWords(kword.subtract)
 						Subtract(ParseArgs(args))
-					Case "multiply"
+					Case keyWords(kword.multiply)
 						Multiply(ParseArgs(args))
-					Case "divide"
+					Case keyWords(kword.divide)
 						Divide(ParseArgs(args))
-					Case "round"
+					Case keyWords(kword.round)
 						Round(ParseArgs(args))
-					Case "floor"
+					Case keyWords(kword.floor)
 						Floor(ParseArgs(args))
-					Case "ceil"
+					Case keyWords(kword.ceil)
 						Ceil(ParseArgs(args))
-					Case "char"
+					Case keyWords(kword._char)
 						GetC(ParseArgs(args))
-					Case "format"
+					Case keyWords(kword.format)
 						FormatN(ParseArgs(args))
-					Case "padleft"
+					Case keyWords(kword.padleft)
 						Pad(ParseArgs(args), True)
-					Case "padright"
+					Case keyWords(kword.padright)
 						Pad(ParseArgs(args), False)
-					Case "len"
+					Case keyWords(kword.len)
 						Len(ParseArgs(args))
-					Case "substring"
+					Case keyWords(kword.substring)
 						SubString(ParseArgs(args))
-					Case "call"
+					Case keyWords(kword._call)
 						CallSection(ParseArgs(args))
-					Case "function"
+					Case keyWords(kword._function)
 						CallFunction(ParseArgs(args))
-					Case "beep"
+					Case keyWords(kword.beep)
 						Media.SystemSounds.Beep.Play()
-					Case "title"
+					Case keyWords(kword.title)
 						title(ParseArgs(args))
-					Case "readkey"
+					Case keyWords(kword.readkey)
 						ReadKey(ParseArgs(args))
-					Case "maxcommands"
+					Case keyWords(kword.maxcommands)
 						SetMaxCommands(ParseArgs(args))
-					Case "fileloop"
+					Case keyWords(kword.fileloop)
 						NewLoop(ParseArgs(args))
-					Case "end"
+					Case keyWords(kword._end)
 						Environment.Exit(1)
-					Case "encoding"
+					Case keyWords(kword.encoding)
 						SetEncoding(ParseArgs(args))
-					Case "sleep"
+					Case keyWords(kword.sleep)
 						Wait(ParseArgs(args))
 					Case Else
 						DisplayError("Invalid command: " + Chr(34) + command + Chr(34) + "!")
@@ -1058,16 +1142,14 @@ Class ScriptInterpreter
 
 	End Function
 
-	Public fixedVars() As String = {"q", "newline", "dircount", "filecount", "accessdenied", "filepath", "filename", "filenamenx", "size", "folder", "path", "initpath", "exepath", "year", "month", "day", "hour", "minute", "second", "msecond", "utcoffset", "maxcommands", "swtime", "proccommands", "bufferwidth", "bufferheight", "fileextension"}
-
-	Function GetFixedVar(varName As String) As String
+	Friend Function GetFixedVar(varName As String) As String
 
 		Select Case LCase(varName)
-			Case "q"
-				Return Chr(34)
-			Case "newline"
+			Case fixedVars(fvars.q)
+				Return Chr(ASCII.Quote)
+			Case fixedVars(fvars.newline)
 				Return vbCrLf
-			Case "dircount"
+			Case fixedVars(fvars.dircount)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1077,7 +1159,7 @@ Class ScriptInterpreter
 				Else
 					Return CStr(curDir.GetDirectories.Count)
 				End If
-			Case "filecount"
+			Case fixedVars(fvars.filecount)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1087,9 +1169,9 @@ Class ScriptInterpreter
 				Else
 					Return CStr(curDir.GetFiles.Count)
 				End If
-			Case "accessdenied"
+			Case fixedVars(fvars.accessdenied)
 				Return AccessDenied.ToString
-			Case "filepath"
+			Case fixedVars(fvars.filepath)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1099,7 +1181,7 @@ Class ScriptInterpreter
 				Else
 					Return curFile.FullName
 				End If
-			Case "filename"
+			Case fixedVars(fvars.filename)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1109,7 +1191,7 @@ Class ScriptInterpreter
 				Else
 					Return curFile.Name
 				End If
-			Case "filenamenx"
+			Case fixedVars(fvars.filenamenx)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1119,7 +1201,7 @@ Class ScriptInterpreter
 				Else
 					Return Path.GetFileNameWithoutExtension(curFile.FullName)
 				End If
-			Case "fileextension"
+			Case fixedVars(fvars.fileextension)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1129,7 +1211,7 @@ Class ScriptInterpreter
 				Else
 					Return Path.GetExtension(curFile.FullName)
 				End If
-			Case "size"
+			Case fixedVars(fvars.size)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1139,7 +1221,7 @@ Class ScriptInterpreter
 				Else
 					Return CStr(curFile.Length)
 				End If
-			Case "folder"
+			Case fixedVars(fvars.folder)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1147,7 +1229,7 @@ Class ScriptInterpreter
 				Else
 					Return curDir.Name
 				End If
-			Case "path"
+			Case fixedVars(fvars.path)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				ElseIf curDir Is Nothing Then
@@ -1155,39 +1237,39 @@ Class ScriptInterpreter
 				Else
 					Return curDir.FullName
 				End If
-			Case "initpath"
+			Case fixedVars(fvars.initpath)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
 				Else
 					Return InitPath(InitPath.Count - 1)
 				End If
-			Case "exepath"
+			Case fixedVars(fvars.exepath)
 				Return My.Application.Info.DirectoryPath
-			Case "year"
+			Case fixedVars(fvars.year)
 				Return Format(Date.Now, "yyyy")
-			Case "month"
+			Case fixedVars(fvars.month)
 				Return Format(Date.Now, "MM")
-			Case "day"
+			Case fixedVars(fvars.day)
 				Return Format(Date.Now, "dd")
-			Case "hour"
+			Case fixedVars(fvars.hour)
 				Return Format(Date.Now, "HH")
-			Case "minute"
+			Case fixedVars(fvars.minute)
 				Return Format(Date.Now, "mm")
-			Case "second"
+			Case fixedVars(fvars.second)
 				Return Format(Date.Now, "ss")
-			Case "msecond"
+			Case fixedVars(fvars.msecond)
 				Return Format(Date.Now, "fffffff")
-			Case "utcoffset"
+			Case fixedVars(fvars.utcoffset)
 				Return Format(Date.Now, "zz")
-			Case "maxcommands"
+			Case fixedVars(fvars.maxcommands)
 				Return MaxCommands.ToString
-			Case "swtime"
+			Case fixedVars(fvars.swtime)
 				Return sWatch.Elapsed.TotalMilliseconds.ToString
-			Case "proccommands"
+			Case fixedVars(fvars.proccommands)
 				Return CommandsProcessed.ToString
-			Case "bufferwidth"
+			Case fixedVars(fvars.bufferwidth)
 				Return Console.BufferWidth.ToString
-			Case "bufferheight"
+			Case fixedVars(fvars.bufferheight)
 				Return Console.BufferHeight.ToString
 		End Select
 
@@ -1195,14 +1277,19 @@ Class ScriptInterpreter
 
 	End Function
 
-	Function isKeyword(varName As String) As Boolean
+	Private Function isKeyword(varName As String) As Boolean
 
+		Dim result As Boolean
 		varName = LCase(varName)
-		Return Array.IndexOf(keyWords, varName) > -1
+		result = Array.IndexOf(keyWords, varName) > -1
+		If result = False Then
+			result = Array.IndexOf(operators, varName) > -1
+		End If
+		Return result
 
 	End Function
 
-	Function isFixedVar(varName As String) As Boolean
+	Friend Function isFixedVar(varName As String) As Boolean
 
 		varName = LCase(varName)
 		Return Array.IndexOf(fixedVars, varName) > -1
@@ -1538,6 +1625,7 @@ Class ScriptInterpreter
 
 	End Sub
 
+	Private operators As String() = {"<", ">", "=", "+", "like"}
 	Private ifcmdArray As String() = {"continue", "next", "nextdir", "return", "then", "end"}
 
 	Private Sub IfStatement(args() As Argument, negative As Boolean)
@@ -1565,7 +1653,7 @@ Class ScriptInterpreter
 		Dim action As String
 		If args.Count = 5 Then onFalse = LCase(args(4).Value)
 
-		If onTrue = "then" Then onFalse = onTrue
+		If onTrue = keyWords(kword._then) Then onFalse = onTrue
 
 		If onTrue = ifcmdArray(4) AndAlso args.Count > 4 Then
 			DisplayError("Too many arguments for function!")
@@ -1578,7 +1666,7 @@ Class ScriptInterpreter
 			isTrue = TryCastDbl(str1) < TryCastDbl(str2)
 		ElseIf op = Chr(ASCII.GreaterThan) Then
 			isTrue = TryCastDbl(str1) > TryCastDbl(str2)
-		ElseIf op = "like" Then
+		ElseIf op = operators(4) Then
 			isTrue = str1 Like str2
 		Else
 			DisplayError("Invalid operator: " + Chr(34) + op + Chr(34) + "!")
@@ -1662,9 +1750,9 @@ Class ScriptInterpreter
 
 		Dim script As ScriptInterpreter
 
-		If LCase(args(1).Value) = "this" Then
+		If LCase(args(1).Value) = keyWords(kword.this) Then
 			script = Me
-		ElseIf LCase(args(1).Value) = "fl4" Then
+		ElseIf LCase(args(1).Value) = keyWords(kword.fl4) Then
 			script = GetScript("fl4")
 		Else
 			path = args(1).Resolve()
@@ -1740,9 +1828,9 @@ Class ScriptInterpreter
 
 		Dim script As ScriptInterpreter
 
-		If LCase(args(0).Value) = "this" Then
+		If LCase(args(0).Value) = keyWords(kword.this) Then
 			script = Me
-		ElseIf LCase(args(0).Value) = "fl4" Then
+		ElseIf LCase(args(0).Value) = keyWords(kword.fl4) Then
 			script = GetScript("fl4")
 		Else
 			path = args(0).Resolve()
