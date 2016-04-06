@@ -431,6 +431,9 @@ Class ScriptInterpreter
 			ScriptFile = File.ReadAllLines(scriptPath, System.Text.Encoding.Default)
 		End If
 		ScriptLines = CompileInfo()
+		If callStack.Length = 1 Then
+			CheckCalls()
+		End If
 		Array.Resize(callStack, callStack.Count - 1)
 	End Sub
 
@@ -511,13 +514,77 @@ Class ScriptInterpreter
 
 	End Function
 
+	Private Sub CheckCmd(args() As Argument, min As Integer, max As Integer, kwords() As Integer, fvar() As Integer)
+
+		If args.Count > max Then
+			DisplayError("Too many arguments for function!")
+		ElseIf args.Count < min Then
+			DisplayError("Missing arguments for function!")
+		End If
+		Dim InvalidStr As String = InvalidArgs(args, kwords, fvar)
+		If InvalidStr IsNot Nothing Then
+			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
+		End If
+
+	End Sub
+
+	Private Sub CheckCalls()
+
+		For i As Integer = 0 To ScriptLines.Length - 1
+			ActiveSub.CurPos = ScriptLines(i).OriginalLine
+			Dim line As String = ScriptLines(i).ToString
+			Dim argArray() As String = Split(line)
+			Dim command As String = argArray(0)
+			Dim argstring As String = String.Empty
+			If argArray.Count > 1 Then
+				argstring = String.Join(Chr(ASCII.Space), argArray, 1, argArray.Count - 1)
+			End If
+			Dim args As Argument() = ParseArgs(argstring, False)
+
+			Select Case command.ToLower
+				Case keyWords(kword._call)
+					CheckCmd(args, 2, 2, {}, {})
+					Dim _sub As String = args(1).Value
+					Dim calledSub As SubInfo = GetSub(_sub)
+					If calledSub Is Nothing Then
+						DisplayError("Cannot find sub " + _sub + "!")
+						Return
+					End If
+					Dim minargs As Integer = calledSub.Arguments.Count + 3
+					Dim invalidArray(args.Count - 2) As Integer
+					invalidArray(0) = 0
+					For a As Integer = 2 To args.Count - 1
+						invalidArray(a - 1) = a
+					Next
+					CheckCmd(args, minargs, minargs, invalidArray, {1})
+
+				Case keyWords(kword._function)
+					CheckCmd(args, 3, 3, {}, {})
+					Dim _sub As String = args(2).Value
+					Dim calledSub As SubInfo = GetSub(_sub)
+					If calledSub Is Nothing Then
+						DisplayError("Cannot find sub " + _sub + "!")
+						Return
+					End If
+					Dim minargs As Integer = calledSub.Arguments.Count + 3
+					Dim invalidArray(args.Count - 2) As Integer
+					invalidArray(0) = 0
+					For a As Integer = 2 To args.Count - 1
+						invalidArray(a - 1) = a
+					Next
+					CheckCmd(args, minargs, minargs, invalidArray, {2})
+
+			End Select
+		Next
+
+	End Sub
+
 	Private Function CompileInfo() As ScriptLine()
 
 		Dim openSub As SubInfo = Nothing
 		Dim loc0 As Integer
 		Dim ifLevel As Integer = -1
 		Dim openIfBlocks As IfBlock() = {}
-		Dim gotoCount As Integer = 0
 		Dim newScript As ScriptLine() = {}
 		Dim curLine As Integer = -1
 
@@ -554,7 +621,7 @@ Class ScriptInterpreter
 							DisplayError("Sub not closed: " + Chr(34) + openSub.Name + Chr(34) + "!")
 							Return {}
 						End If
-						Dim args As Argument() = ParseArgs(argstring)
+						Dim args As Argument() = ParseArgs(argstring, False)
 						If args.Count > 0 Then
 							Dim s1 As SubInfo = GetSub(Me, args(0).Value)
 							If s1 Is Nothing Then
@@ -577,6 +644,7 @@ Class ScriptInterpreter
 					Case keyWords(kword._if), keyWords(kword.ifnot)
 						If Not openSub Is Nothing Then
 							Dim args As Argument() = ParseArgs(argstring)
+							CheckCmd(args, 4, 5, {0, 2}, {1, 3, 4})
 							If args.Count > 3 AndAlso LCase(args(3).Value) = keyWords(kword._then) Then
 								ifLevel += 1
 								Array.Resize(openIfBlocks, ifLevel + 1)
@@ -599,6 +667,7 @@ Class ScriptInterpreter
 					Case keyWords(kword._elseif), keyWords(kword.elseifnot)
 						If Not openSub Is Nothing Then
 							Dim args As Argument() = ParseArgs(argstring)
+							CheckCmd(args, 4, 5, {0, 2}, {1, 3, 4})
 							If args.Count > 3 AndAlso LCase(args(3).Value) = keyWords(kword._then) Then
 								If ifLevel = -1 Then DisplayError("ElseIf/ElseIfNot must follow If/IfNot!")
 								newScript(newScript.Count - 1).IfBlock = openIfBlocks(ifLevel)
@@ -625,7 +694,7 @@ Class ScriptInterpreter
 						End If
 
 					Case keyWords(kword._end)
-						Dim args As Argument() = ParseArgs(argstring)
+						Dim args As Argument() = ParseArgs(argstring, False)
 						If args.Count = 1 Then
 							If LCase(args(0).Value) = keyWords(kword._sub) Then
 								If openSub Is Nothing Then
@@ -642,14 +711,19 @@ Class ScriptInterpreter
 						End If
 
 					Case keyWords(kword.var)
+						Dim args As Argument() = ParseArgs(argstring)
+						CheckCmd(args, 1, 2, {0}, {0, 1})
 						If openSub Is Nothing Then
-							Dim args As Argument() = ParseArgs(argstring)
 							If args.Count = 2 Then
 								NewVar(args(0).Value).Value = args(1).Resolve
 							ElseIf args.Count = 1 Then
 								NewVar(args(0).Value).Value = String.Empty
 							End If
 						End If
+
+					Case keyWords(kword._set)
+						Dim args As Argument() = ParseArgs(argstring)
+						CheckCmd(args, 2, 2, {0}, {0, 1})
 
 					Case keyWords(kword._call)
 						Dim args As Argument() = ParseArgs(argstring)
@@ -682,6 +756,63 @@ Class ScriptInterpreter
 							DisplayError("Invalid argument: " + Chr(34) + args(0).Value + Chr(34) + "!")
 							Return {}
 						End If
+
+					Case keyWords(kword.sleep)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 1, 1, {0}, {0})
+
+					Case keyWords(kword._return)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 0, 1, {0}, {0})
+
+					Case keyWords(kword.pause)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 0, 1, {0}, {0})
+
+					Case keyWords(kword.encoding)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 1, 1, {0, 1}, {0, 1})
+
+					Case keyWords(kword.title)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 1, 1, {0}, {})
+
+					Case keyWords(kword.print)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 1, 1, {0}, {})
+
+					Case keyWords(kword._goto)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 1, 1, {0}, {0})
+
+					Case keyWords(kword.maxcommands)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 1, 1, {0}, {})
+
+					Case keyWords(kword.add), keyWords(kword.subtract), keyWords(kword.multiply), keyWords(kword.divide)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 3, 3, {0, 1, 2}, {0})
+
+					Case keyWords(kword.round), keyWords(kword.floor), keyWords(kword.ceil)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 2, 2, {0, 1}, {0})
+
+					Case keyWords(kword._char)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 3, 3, {0, 1, 2}, {0})
+
+					Case keyWords(kword.format), keyWords(kword.padleft), keyWords(kword.padright)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 3, 3, {0, 1, 2}, {0, 2})
+
+					Case keyWords(kword.len), keyWords(kword.lcase), keyWords(kword.ucase)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 2, 2, {0, 1}, {0})
+
+					Case keyWords(kword.replace), keyWords(kword.substring)
+						Dim args As Argument() = ParseArgs(argstring, False)
+						CheckCmd(args, 4, 4, {0, 1, 2, 3}, {0})
+
 				End Select
 			End If
 		Next
@@ -770,7 +901,7 @@ Class ScriptInterpreter
 		Backslash = 92
 	End Enum
 
-	Private Function ParseArgs(source As String) As Argument()
+	Private Function ParseArgs(source As String, Optional resolveVars As Boolean = True) As Argument()
 
 		If source.Length = 0 Then Return {}
 
@@ -802,7 +933,7 @@ Class ScriptInterpreter
 						temp.Append(curChar)
 					Else
 						n = GetNextCharIndex(source, n)
-						mustResolve = True
+						If resolveVars Then mustResolve = True
 						argType = Argument.ArgType.Str
 					End If
 					If temp.Length > 0 Then
@@ -1098,7 +1229,7 @@ Class ScriptInterpreter
 					Case keyWords(kword.substring)
 						SubString(ParseArgs(args))
 					Case keyWords(kword._call)
-						CallSection(ParseArgs(args))
+						CallSub(ParseArgs(args))
 					Case keyWords(kword._function)
 						CallFunction(ParseArgs(args))
 					Case keyWords(kword.beep)
@@ -1350,20 +1481,6 @@ Class ScriptInterpreter
 
 	Private Sub Wait(args() As Argument)
 
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 1 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		args(0).Resolve()
 
 		Dim num As Integer = TryCastInt(args(0).Value)
@@ -1372,17 +1489,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Function _Return(args() As Argument) As String
-
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return Nothing
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return Nothing
-		End If
 
 		If args.Count > 0 Then
 			Return args(0).Resolve
@@ -1393,17 +1499,6 @@ Class ScriptInterpreter
 	End Function
 
 	Private Sub ReadKey(args() As Argument)
-
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim key As ConsoleKeyInfo = Console.ReadKey(True)
 
@@ -1419,20 +1514,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub SetEncoding(args() As Argument)
-
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 1 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0, 1})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim val As String = LCase(args(0).Value)
 		If val = "ascii" Then
@@ -1452,23 +1533,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub SetVar(args() As Argument, setNew As Boolean)
-
-		Dim minargs As Integer = 2
-		If setNew Then minargs = 1
-
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < minargs Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		If setNew Then
 			If args.Count = 2 Then
@@ -1490,20 +1554,6 @@ Class ScriptInterpreter
 
 	Private Sub title(args() As Argument)
 
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 1 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		args(0).Resolve()
 
 		Console.Title = args(0).Value
@@ -1511,20 +1561,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub _print(args() As Argument)
-
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 1 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		args(0).Resolve()
 
@@ -1581,20 +1617,6 @@ Class ScriptInterpreter
 
 	Private Sub Jump(args() As Argument)
 
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 1 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim i As Integer = getGotoPos(args(0).Value)
 		If i = Nothing Then
 			DisplayError("The Goto-mark does not exist: " + Chr(34) + args(0).Value + Chr(34) + "!")
@@ -1607,20 +1629,6 @@ Class ScriptInterpreter
 
 	Private Sub SetMaxCommands(args() As Argument)
 
-		If args.Count > 1 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 1 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0}, {})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim num1 As Integer = TryCastInt(args(0).Resolve)
 		If num1 = Nothing Then Return
 		MaxCommands = num1
@@ -1631,20 +1639,6 @@ Class ScriptInterpreter
 	Private ifcmdArray As String() = {"continue", "next", "nextdir", "return", "then", "end"}
 
 	Private Sub IfStatement(args() As Argument, negative As Boolean)
-
-		If args.Count > 5 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 4 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 2}, {1, 3, 4})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim str1 As String = LCase(args(0).Resolve())
 		Dim str2 As String = LCase(args(2).Resolve())
@@ -1712,44 +1706,9 @@ Class ScriptInterpreter
 
 	Private Sub CallFunction(args() As Argument)
 
-		Dim section As String
+		Dim _sub As String = args(2).Value
+		Dim calledSub As SubInfo = GetSub(_sub)
 		Dim path As String = scriptPath
-		Dim minargs As Integer = 3
-
-		If args.Count < minargs Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		section = args(2).Value
-		Dim calledSub As SubInfo = GetSub(section)
-		If calledSub Is Nothing Then
-			DisplayError("Cannot find sub " + section + "!")
-			Return
-		End If
-
-		minargs += calledSub.Arguments.Count
-
-		If args.Count > minargs Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < minargs Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim invalidArray(args.Count - 2) As Integer
-		invalidArray(0) = 0
-		For i As Integer = 2 To args.Count - 1
-			invalidArray(i - 1) = i
-		Next
-
-		Dim InvalidStr As String = InvalidArgs(args, invalidArray, {2})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim script As ScriptInterpreter
 
 		If LCase(args(1).Value) = keyWords(kword.this) Then
@@ -1777,7 +1736,7 @@ Class ScriptInterpreter
 			Return
 		End If
 
-		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
+		Dim result As ReturnData = script.Run(_sub, curDir, curFile, passargs)
 		If result.Value = Nothing Then
 			DisplayError("Function returned NULL!")
 			Return
@@ -1789,45 +1748,11 @@ Class ScriptInterpreter
 
 	End Sub
 
-	Private Sub CallSection(args() As Argument)
+	Private Sub CallSub(args() As Argument)
 
-		Dim section As String
+		Dim _sub As String = args(1).Value
+		Dim calledSub As SubInfo = GetSub(_sub)
 		Dim path As String = scriptPath
-		Dim minargs As Integer = 2
-
-		If args.Count < minargs Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		section = args(1).Value
-		Dim calledSub As SubInfo = GetSub(section)
-		If calledSub Is Nothing Then
-			DisplayError("Cannot find sub " + Chr(34) + section + Chr(34) + "!")
-			Return
-		End If
-
-		minargs += calledSub.Arguments.Count
-
-		If args.Count > minargs Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < minargs Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim invalidArray(args.Count - 2) As Integer
-		For i As Integer = 1 To args.Count - 1
-			invalidArray(i - 1) = i
-		Next
-
-		Dim InvalidStr As String = InvalidArgs(args, invalidArray, {1})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim script As ScriptInterpreter
 
 		If LCase(args(0).Value) = keyWords(kword.this) Then
@@ -1848,7 +1773,7 @@ Class ScriptInterpreter
 			Array.ConstrainedCopy(args, 3, passargs, 0, passargs.Count)
 		End If
 
-		Dim result As ReturnData = script.Run(section, curDir, curFile, passargs)
+		Dim result As ReturnData = script.Run(_sub, curDir, curFile, passargs)
 		ActiveSub.ReturnData.NextDirectory = result.NextDirectory
 		ActiveSub.ReturnData.NextFile = result.NextFile
 
@@ -1906,20 +1831,6 @@ Class ScriptInterpreter
 
 	Private Sub Add(args() As Argument)
 
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -1947,20 +1858,6 @@ Class ScriptInterpreter
 
 	Private Sub Subtract(args() As Argument)
 
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -1975,20 +1872,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub Multiply(args() As Argument)
-
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim var As Variable = GetVarObj(args(0).Value)
 
@@ -2014,20 +1897,6 @@ Class ScriptInterpreter
 
 	Private Sub Divide(args() As Argument)
 
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2052,20 +1921,6 @@ Class ScriptInterpreter
 
 	Private Sub Round(args() As Argument)
 
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 2 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2079,20 +1934,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub Floor(args() As Argument)
-
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 2 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim var As Variable = GetVarObj(args(0).Value)
 
@@ -2108,20 +1949,6 @@ Class ScriptInterpreter
 
 	Private Sub Ceil(args() As Argument)
 
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 2 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2135,20 +1962,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub GetC(args() As Argument)
-
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim var As Variable = GetVarObj(args(0).Value)
 
@@ -2173,20 +1986,6 @@ Class ScriptInterpreter
 
 	Private Sub FormatN(args() As Argument)
 
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0, 2})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2200,20 +1999,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub Pad(args() As Argument, left As Boolean)
-
-		If args.Count > 3 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 3 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim var As Variable = GetVarObj(args(0).Value)
 
@@ -2236,20 +2021,6 @@ Class ScriptInterpreter
 
 	Private Sub Len(args() As Argument)
 
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 2 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2263,20 +2034,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub lcas(args() As Argument)
-
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 2 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim var As Variable = GetVarObj(args(0).Value)
 
@@ -2294,20 +2051,6 @@ Class ScriptInterpreter
 
 	Private Sub ucas(args() As Argument)
 
-		If args.Count > 2 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 2 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2324,20 +2067,6 @@ Class ScriptInterpreter
 
 	Private Sub Rep(args() As Argument)
 
-		If args.Count > 4 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 4 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2, 3}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
-
 		Dim var As Variable = GetVarObj(args(0).Value)
 
 		If var Is Nothing Then
@@ -2351,20 +2080,6 @@ Class ScriptInterpreter
 	End Sub
 
 	Private Sub SubString(args() As Argument)
-
-		If args.Count > 4 Then
-			DisplayError("Too many arguments for function!")
-			Return
-		ElseIf args.Count < 4 Then
-			DisplayError("Missing arguments for function!")
-			Return
-		End If
-
-		Dim InvalidStr As String = InvalidArgs(args, {0, 1, 2, 3}, {0})
-		If InvalidStr IsNot Nothing Then
-			DisplayError("Invalid argument for function: " + Chr(34) + InvalidStr + Chr(34) + "!")
-			Return
-		End If
 
 		Dim var As Variable = GetVarObj(args(0).Value)
 
