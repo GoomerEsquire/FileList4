@@ -399,7 +399,7 @@ Class ScriptInterpreter
 		For Each lineObj As ScriptLine In ScriptLines
 			If lineObj.Line = line Then Return lineObj.OriginalLine
 		Next
-		Return 0
+		Return line
 
 	End Function
 
@@ -516,7 +516,7 @@ Class ScriptInterpreter
 
 	Private Sub CheckCmd(args() As Argument, min As Integer, max As Integer, kwords() As Integer, fvar() As Integer)
 
-		If args.Count > max Then
+		If max > -1 AndAlso args.Count > max Then
 			DisplayError("Too many arguments for function!")
 		ElseIf args.Count < min Then
 			DisplayError("Missing arguments for function!")
@@ -550,16 +550,15 @@ Class ScriptInterpreter
 						DisplayError("Cannot find sub " + _sub + "!")
 						Return
 					End If
-					Dim minargs As Integer = calledSub.Arguments.Count + 3
+					Dim minargs As Integer = calledSub.Arguments.Count + 2
 					Dim invalidArray(args.Count - 2) As Integer
-					invalidArray(0) = 0
-					For a As Integer = 2 To args.Count - 1
+					For a As Integer = 1 To args.Count - 1
 						invalidArray(a - 1) = a
 					Next
 					CheckCmd(args, minargs, minargs, invalidArray, {1})
 
 				Case keyWords(kword._function)
-					CheckCmd(args, 3, 3, {}, {})
+					CheckCmd(args, 3, -1, {}, {})
 					Dim _sub As String = args(2).Value
 					Dim calledSub As SubInfo = GetSub(_sub)
 					If calledSub Is Nothing Then
@@ -712,7 +711,7 @@ Class ScriptInterpreter
 
 					Case keyWords(kword.var)
 						Dim args As Argument() = ParseArgs(argstring)
-						CheckCmd(args, 1, 2, {0}, {0, 1})
+						CheckCmd(args, 1, 2, {0}, {0})
 						If openSub Is Nothing Then
 							If args.Count = 2 Then
 								NewVar(args(0).Value).Value = args(1).Resolve
@@ -723,7 +722,7 @@ Class ScriptInterpreter
 
 					Case keyWords(kword._set)
 						Dim args As Argument() = ParseArgs(argstring)
-						CheckCmd(args, 2, 2, {0}, {0, 1})
+						CheckCmd(args, 2, 2, {0}, {0})
 
 					Case keyWords(kword._call)
 						Dim args As Argument() = ParseArgs(argstring)
