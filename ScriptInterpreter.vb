@@ -415,7 +415,7 @@ Class ScriptInterpreter
 		keyWords = MakeKeywords()
 		fixedVars = MakeFixedVars()
 		If LCase(path) = "fl4" Then
-			ScriptFile = Split(My.Resources.fl4, vbCrLf)
+			ScriptFile = Split(My.Resources.fl4, vbNewLine)
 			scriptPath = path
 		Else
 			Dim finfo As New FileInfo(path)
@@ -472,7 +472,7 @@ Class ScriptInterpreter
 			Next
 			Array.Reverse(newCallStack)
 		End If
-		Dim output As String = vbCrLf + StrDup(Console.BufferWidth, "*") + text + vbCrLf + vbCrLf + "Call stack:" + vbCrLf + StrDup(11, "-") + vbCrLf + String.Join(vbCrLf, newCallStack) + vbCrLf + StrDup(Console.BufferWidth, "*")
+		Dim output As String = vbNewLine + StrDup(Console.BufferWidth, "*") + text + vbNewLine + vbNewLine + "Call stack:" + vbNewLine + StrDup(11, "-") + vbNewLine + String.Join(vbNewLine, newCallStack) + vbNewLine + StrDup(Console.BufferWidth, "*")
 		Console.WriteLine(output)
 
 		ErrorsHappened = True
@@ -760,9 +760,9 @@ Class ScriptInterpreter
 
 	Friend Enum ASCII
 		Space = 32
-		Plus = 43
 		Quote = 34
 		Apostrophe = 39
+		Plus = 43
 		Colon = 58
 		SmallerThan = 60
 		Equals = 61
@@ -774,73 +774,65 @@ Class ScriptInterpreter
 
 		If source.Length = 0 Then Return {}
 
-		Dim stringOpen As Boolean = False
-		Dim mustResolve As Boolean = False
 		Dim temp, tempArg As New StringBuilder
-		Dim move As Integer = 0
-		Dim curChar, nextChar As Char
 		Dim newArg(4) As Argument
-		Dim argType As Argument.ArgType = Argument.ArgType.Var
+		Dim argType As Argument.ArgType
 
-		For i As Integer = 1 To source.Length
-			If i > source.Length Then
+		For i As Integer = 0 To source.Length - 1
+			Dim stringOpen, mustResolve As Boolean
+			Dim curChar As Char
+
+			If i > source.Length - 1 Then
 				DisplayError("Unexpected end of argument!")
 				Return Nothing
 			End If
-			curChar = source(i - 1)
-			If i + 1 <= source.Length Then
-				nextChar = source(i)
-			Else
-				nextChar = Nothing
-			End If
-
+			curChar = source(i)
 			If curChar = Chr(ASCII.Quote) Then
 				stringOpen = Not stringOpen
 				argType = Argument.ArgType.Str
-
 			ElseIf stringOpen Then
-
 				tempArg.Append(curChar)
 				argType = Argument.ArgType.Str
 
-			ElseIf curChar = Chr(ASCII.Space) AndAlso Not nextChar = Chr(ASCII.Plus) Then
+			ElseIf curChar = Chr(ASCII.Space) OrElse i = source.Length - 1 Then
+				Dim n As Integer = GetNextCharIndex(source, i)
 
-				If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
-					If mustResolve AndAlso temp.Length > 0 Then
-						If Not Resolve(temp) Then Return Nothing
+				If n = -1 OrElse source(n) = Chr(ASCII.Plus) Then
+					If n = -1 Then
+						temp.Append(curChar)
+					Else
+						n = GetNextCharIndex(source, n)
+						mustResolve = True
+						argType = Argument.ArgType.Str
 					End If
-					tempArg.Append(temp)
-					temp.Clear()
-				End If
-
-				newArg += New Argument(tempArg.ToString, argType)
-				argType = Argument.ArgType.Var
-				tempArg.Clear()
-				mustResolve = False
-
-			ElseIf nextChar = Nothing OrElse (curChar = Chr(ASCII.Space) AndAlso nextChar = Chr(ASCII.Plus)) Then
-
-				If nextChar = Nothing Then
-					temp.Append(curChar)
-				Else
-					move = +2
-					mustResolve = True
-					argType = Argument.ArgType.Str
-				End If
-				If temp.Length > 0 Then
-					If mustResolve Then
-						If Not Resolve(temp) Then Return Nothing
+					If temp.Length > 0 Then
+						If mustResolve AndAlso Not Resolve(temp) Then
+							Return Nothing
+						End If
+						tempArg.Append(temp)
+						temp.Clear()
 					End If
-					tempArg.Append(temp)
-					temp.Clear()
+
+				ElseIf Not source(n) = Chr(ASCII.Plus) Then
+					If argType = Argument.ArgType.Str OrElse temp.Length > 0 Then
+						If mustResolve AndAlso temp.Length > 0 AndAlso Not Resolve(temp) Then
+							Return Nothing
+						End If
+						tempArg.Append(temp)
+						temp.Clear()
+					End If
+					newArg += New Argument(tempArg.ToString, argType)
+					argType = Argument.ArgType.Var
+					tempArg.Clear()
+					mustResolve = False
 				End If
+				If Not n = -1 AndAlso Not n - 1 = i Then
+					i = n - 1
+				End If
+
 			Else
-
 				temp.Append(curChar)
-
 			End If
-			i += move
-			move = 0
 		Next
 
 		If argType = Argument.ArgType.Str OrElse tempArg.Length > 0 Then
@@ -850,6 +842,16 @@ Class ScriptInterpreter
 		newArg.Trim()
 
 		Return newArg
+
+	End Function
+
+	Private Function GetNextCharIndex(input As String, start As Integer) As Integer
+
+		For i As Integer = start + 1 To input.Length - 1
+			If Not input(i) = Chr(ASCII.Space) Then Return i
+		Next
+
+		Return -1
 
 	End Function
 
@@ -1148,7 +1150,7 @@ Class ScriptInterpreter
 			Case fixedVars(fvars.q)
 				Return Chr(ASCII.Quote)
 			Case fixedVars(fvars.newline)
-				Return vbCrLf
+				Return vbNewLine
 			Case fixedVars(fvars.dircount)
 				If callStack(0).Name = "Init" Then
 					Return String.Empty
